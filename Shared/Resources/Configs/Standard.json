@@ -18,16 +18,20 @@
     },
     "fullscreen": false,
     "image_alpha": 255,
-    "image_dir": "Images/images/",
+    "image_dir": "images/",
     "maximum_delay": 0,
     "minimum_delay": 0,
-    "music": null,
+    "music": "music6.mp3",
     "scale": 10,
     "shuffle_images": true,
     "size": [
       1280,
       800
     ],
+    "spiral_type": "twist",
+    "spiral_tightness": 0.18,
+    "spiral_arms": 3,
+    "spiral_line_width": 3.0,
     "spiral_image": "",
     "spiral_range": 90,
     "spiral_step": 1,
@@ -37,8 +41,7 @@
       51,
       204
     ],
-    "time_scale": 2,
-    "voice": "Vicki"
+    "time_scale": 2
   },
   "scripts": {
     "body": [
@@ -798,9 +801,8 @@
     "text": [
       "!pause_music()",
       "!words_on()",
-      "!open_question('What is your name?', 'name')",
-      "!open_question('Who is your Mistress?', 'master')",
-      "!prompt('Hit return to start')",
+      "!set_pref('What is your name?', 'name')",
+      "!set_pref('Who is your Mistress?', 'master')",
       "!unpause_music()",
       "!jump('self.body')"
     ]

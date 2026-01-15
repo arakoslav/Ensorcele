@@ -8,14 +8,35 @@
 
 import Foundation
 
+/// Types of spiral generation algorithms
+enum SpiralType: String, Codable, CaseIterable {
+    case fermat = "fermat"              // Default: r = t², expanding spacing
+    case logarithmic = "logarithmic"    // Constant-angle swoopy spiral: r = a * e^(bθ)
+    case filled = "filled"              // Filled alternating sectors (half-screen tint)
+    case twist = "twist"                // Counter-rotating layers
+    case nimja = "nimja"                // Nimja-style: curved wedge sectors with strong pull effect
+    case chromatic = "chromatic"        // Shader-style with chromatic aberration (RGB offset)
+
+    static var `default`: SpiralType { .twist }
+}
+
 /// Main configuration structure loaded from JSON files
-struct SpiralConfig: Codable, Identifiable {
+struct SpiralConfig: Codable, Identifiable, Hashable {
     let id = UUID()
     let name: String
     let description: String?
     let base: String?  // Parent config for inheritance
     let properties: Properties
     let scripts: [String: [ScriptElement]]
+
+    // Hashable conformance based on id
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+
+    static func == (lhs: SpiralConfig, rhs: SpiralConfig) -> Bool {
+        lhs.id == rhs.id
+    }
 
     /// Configuration properties controlling behavior and appearance
     struct Properties: Codable {
@@ -31,6 +52,12 @@ struct SpiralConfig: Codable, Identifiable {
         let spiralRange: Int  // Degrees before repeating
         let spiralStep: Int   // Degrees per frame
         let scale: Int        // Generation scale factor
+        let spiralType: SpiralType  // Algorithm for spiral generation
+        let spiralArms: Int   // Number of spiral arms (for symmetry)
+        let spiralFillColor: [Int]?  // Fill color for filled spiral type
+        let spiralTightness: Double  // Controls spacing (logarithmic: growth rate, fermat: density)
+        let spiralLineWidth: Double  // Width of spiral lines
+        let spiralCounterRate: Double  // For twist: counter-rotation speed multiplier (e.g., 0.7 = 70% speed)
 
         // Text properties
         let textColor: [Int]
@@ -79,6 +106,12 @@ struct SpiralConfig: Codable, Identifiable {
             spiralRange = try container.decodeIfPresent(Int.self, forKey: .spiralRange) ?? 90
             spiralStep = try container.decodeIfPresent(Int.self, forKey: .spiralStep) ?? 1
             scale = try container.decodeIfPresent(Int.self, forKey: .scale) ?? 10
+            spiralType = try container.decodeIfPresent(SpiralType.self, forKey: .spiralType) ?? .fermat
+            spiralArms = try container.decodeIfPresent(Int.self, forKey: .spiralArms) ?? 4
+            spiralFillColor = try container.decodeIfPresent([Int].self, forKey: .spiralFillColor)
+            spiralTightness = try container.decodeIfPresent(Double.self, forKey: .spiralTightness) ?? 0.2
+            spiralLineWidth = try container.decodeIfPresent(Double.self, forKey: .spiralLineWidth) ?? 4.0
+            spiralCounterRate = try container.decodeIfPresent(Double.self, forKey: .spiralCounterRate) ?? 0.7
 
             textColor = try container.decodeIfPresent([Int].self, forKey: .textColor) ?? [0, 51, 204]
             textAlpha = try container.decodeIfPresent(Int.self, forKey: .textAlpha) ?? 254
@@ -119,6 +152,12 @@ struct SpiralConfig: Codable, Identifiable {
             case spiralImage = "spiral_image"
             case spiralRange = "spiral_range"
             case spiralStep = "spiral_step"
+            case spiralType = "spiral_type"
+            case spiralArms = "spiral_arms"
+            case spiralFillColor = "spiral_fill_color"
+            case spiralTightness = "spiral_tightness"
+            case spiralLineWidth = "spiral_line_width"
+            case spiralCounterRate = "spiral_counter_rate"
             case voice
             case subliminalAlpha = "subliminal_alpha"
             case subliminalColor = "subliminal_color"

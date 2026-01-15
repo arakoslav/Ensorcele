@@ -13,6 +13,7 @@ import SwiftUI
 class ConfigListViewModel {
     var configs: [SpiralConfig] = []
     var categorizedConfigs: [CategorizedConfigs] = []
+    var configURLs: [UUID: URL] = [:]  // Map config ID to source URL
     var isLoading: Bool = false
     var errorMessage: String?
 
@@ -26,15 +27,16 @@ class ConfigListViewModel {
         isLoading = true
         errorMessage = nil
 
-        do {
-            configs = configLoader.loadAllConfigs()
-            categorizedConfigs = categorizeConfigs(configs)
-            isLoading = false
-        } catch {
-            self.errorMessage = error.localizedDescription
-            isLoading = false
-            print("Error loading configs: \(error)")
-        }
+        let results = configLoader.loadAllConfigsWithURLs()
+        configs = results.map { $0.config }
+        configURLs = Dictionary(uniqueKeysWithValues: results.map { ($0.config.id, $0.url) })
+        categorizedConfigs = categorizeConfigs(configs)
+        isLoading = false
+    }
+
+    /// Get the source URL for a config
+    func sourceURL(for config: SpiralConfig) -> URL? {
+        return configURLs[config.id]
     }
 
     func reload() {
@@ -42,8 +44,8 @@ class ConfigListViewModel {
     }
 
     private func categorizeConfigs(_ allConfigs: [SpiralConfig]) -> [CategorizedConfigs] {
-        // Load category definitions
-        guard let categoriesURL = Bundle.main.url(forResource: "ConfigCategories", withExtension: "json", subdirectory: "Configs"),
+        // Load category definitions from iCloud/local storage (same location as configs)
+        guard let categoriesURL = iCloudResourceManager.shared.getConfigURL(named: "ConfigCategories.json"),
               let categoriesData = try? Data(contentsOf: categoriesURL),
               let categoryData = try? JSONDecoder().decode(ConfigCategoryData.self, from: categoriesData) else {
             // If categories file doesn't exist, return all configs in one category

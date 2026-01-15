@@ -53,7 +53,12 @@ class SpeechSynthesizerMac: NSObject, SpeechSynthesizerProtocol {
     }
 
     func speak(_ text: String) {
+        speak(text, volume: 1.0)
+    }
+
+    func speak(_ text: String, volume: Float) {
         currentText = text
+        synthesizer?.volume = volume
         synthesizer?.startSpeaking(text)
     }
 

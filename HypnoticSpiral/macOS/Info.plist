@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSCameraUsageDescription</key>
+	<string>This app uses the camera to capture images for display during sessions.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app uses the microphone for speech recognition during mantra exercises.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>This app uses speech recognition to verify spoken mantras during sessions.</string>
+</dict>
+</plist>

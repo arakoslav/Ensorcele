@@ -48,6 +48,10 @@ class SpeechSynthesizeriOS: NSObject, SpeechSynthesizerProtocol {
     }
 
     func speak(_ text: String) {
+        speak(text, volume: 1.0)
+    }
+
+    func speak(_ text: String, volume: Float) {
         currentText = text
         let utterance = AVSpeechUtterance(string: text)
 
@@ -56,6 +60,9 @@ class SpeechSynthesizeriOS: NSObject, SpeechSynthesizerProtocol {
 
         // Convert Speech Manager rate to AVSpeechUtterance rate
         utterance.rate = speechManagerRateToAVRate(currentSpeechManagerRate)
+
+        // Set volume (0.0-1.0)
+        utterance.volume = volume
 
         currentUtterance = utterance
         synthesizer.speak(utterance)

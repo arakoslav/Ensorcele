@@ -15,6 +15,11 @@ class ConfigLoader {
 
     /// Load all available configurations from iCloud
     func loadAllConfigs() -> [SpiralConfig] {
+        return loadAllConfigsWithURLs().map { $0.config }
+    }
+
+    /// Load all configurations with their source URLs
+    func loadAllConfigsWithURLs() -> [(config: SpiralConfig, url: URL)] {
         let urls = iCloudResourceManager.shared.listConfigs()
 
         if urls.isEmpty {
@@ -22,17 +27,17 @@ class ConfigLoader {
             return []
         }
 
-        var configs: [SpiralConfig] = []
+        var results: [(config: SpiralConfig, url: URL)] = []
         for url in urls {
             do {
                 let config = try loadConfig(from: url)
-                configs.append(config)
+                results.append((config: config, url: url))
             } catch {
                 print("Warning: Failed to load config from \(url.lastPathComponent): \(error)")
             }
         }
 
-        return configs.sorted { $0.name < $1.name }
+        return results.sorted { $0.config.name < $1.config.name }
     }
 
     /// Load a configuration by name (without .json extension)

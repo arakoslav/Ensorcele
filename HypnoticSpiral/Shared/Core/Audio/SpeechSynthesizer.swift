@@ -15,6 +15,7 @@ protocol SpeechSynthesizerProtocol: AnyObject {
 
     func setVoice(_ voiceName: String?)
     func speak(_ text: String)
+    func speak(_ text: String, volume: Float)  // Volume 0.0-1.0, default 1.0
     func stop()
 }
 

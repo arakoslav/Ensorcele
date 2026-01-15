@@ -29,6 +29,19 @@ class SpiralEngine: ObservableObject {
 
     // Speech batching
     private var sentenceBuffer: [String] = []
+    private var speechQueue: [SpeechQueueItem] = []  // Queue of sentences and commands
+
+    /// Items in the speech queue - either sentences to speak or commands to execute
+    private enum SpeechQueueItem {
+        case sentence(String)
+        case command(String)
+    }
+
+    /// Commands that require user interaction and should stop pre-buffering
+    private let interactiveCommands: Set<String> = [
+        "prompt", "short_prompt", "open_question", "yn_question", "question_yn",
+        "challenge", "set_pref", "mantra", "speak_mantra", "quit"
+    ]
 
     // Time-based spiral rotation
     private var spiralStartTime: CFAbsoluteTime = 0
@@ -45,10 +58,10 @@ class SpiralEngine: ObservableObject {
     private var displayLink: CVDisplayLink?
     #endif
 
-    init(state: SpiralState, config: SpiralConfig, configLoader: ConfigLoader = ConfigLoader()) {
+    init(state: SpiralState, config: SpiralConfig, configLoader: ConfigLoader? = nil) {
         self.state = state
         self.config = config
-        self.configLoader = configLoader
+        self.configLoader = configLoader ?? ConfigLoader()
 
         // Create platform-specific speech synthesizer
         #if os(macOS)
@@ -148,7 +161,8 @@ class SpiralEngine: ObservableObject {
     private func startTimer() {
         let interval = 1.0 / Double(config.properties.frameRate)
         displayTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            guard let self = self else { return }
+            Task { @MainActor [weak self] in
                 self?.update()
             }
         }
@@ -158,7 +172,8 @@ class SpiralEngine: ObservableObject {
     }
 
     /// Stop the animation loop
-    func stop() {
+    /// If saveState is true and program hasn't ended, saves progress for resuming
+    func stop(saveState shouldSave: Bool = true) {
         displayTimer?.invalidate()
         displayTimer = nil
 
@@ -173,7 +188,48 @@ class SpiralEngine: ObservableObject {
         speechSynthesizer.stop()
         state.isSpeaking = false
 
+        // Stop music playback
+        musicPlayer.stop()
+
+        // Save session state if we have progress and program didn't end naturally
+        if shouldSave && !state.programEnded && state.wordsIndex > 0 {
+            saveSessionState()
+        } else if state.programEnded {
+            // Clear saved state when program ends naturally
+            SessionStateManager.shared.clearState(for: config.name)
+        }
+
         state.isRunning = false
+    }
+
+    /// Save current session state for later resuming
+    private func saveSessionState() {
+        let savedState = SavedSessionState(
+            configName: config.name,
+            wordsIndex: state.wordsIndex,
+            textSequence: state.textSequence,
+            variables: state.variables,
+            drawSpiral: state.drawSpiral,
+            drawWords: state.drawWords,
+            drawImages: state.drawImages,
+            speakWords: state.speakWords,
+            holdImageIndex: state.holdImageIndex,
+            savedAt: Date()
+        )
+        SessionStateManager.shared.saveState(savedState)
+    }
+
+    /// Restore session from saved state
+    func restoreSession(from savedState: SavedSessionState) {
+        state.wordsIndex = savedState.wordsIndex
+        state.textSequence = savedState.textSequence
+        state.variables = savedState.variables
+        state.drawSpiral = savedState.drawSpiral
+        state.drawWords = savedState.drawWords
+        state.drawImages = savedState.drawImages
+        state.speakWords = savedState.speakWords
+        state.holdImageIndex = savedState.holdImageIndex
+        print("Restored session at index \(savedState.wordsIndex) of \(savedState.textSequence.count)")
     }
 
     /// Pause the animation (keeps timer running but stops updates)
@@ -190,7 +246,7 @@ class SpiralEngine: ObservableObject {
 
     /// Called every frame - decrements frequency counters and triggers events
     private func update() {
-        guard state.isRunning && !state.isWaiting else { return }
+        guard state.isRunning else { return }
 
         let now = CACurrentMediaTime()
         let deltaTime = now - lastUpdateTime
@@ -201,10 +257,17 @@ class SpiralEngine: ObservableObject {
         let frameEquivalent = deltaTime / targetFrameInterval
 
         // Update spiral rotation using time-based angle (smooth, GPU-accelerated)
+        // This continues even when waiting for user input (dialogs)
         if state.drawSpiral && state.spiralImage != nil {
             let elapsed = now - spiralStartTime
             // spiralRotationRate is in degrees per second
-            state.spiralRotation = elapsed * spiralRotationRate
+            state.spiralRotation = -elapsed * spiralRotationRate
+
+            // Counter-rotation for twist spirals (opposite direction, different rate)
+            if state.counterSpiralImage != nil {
+                let counterRate = config.properties.spiralCounterRate
+                state.counterSpiralRotation = elapsed * spiralRotationRate * counterRate
+            }
 
             // Add pulsing scale effect (oscillates between 1.3 and 1.5 - scaled up to prevent edge clipping during wobble)
             let scaleFrequency = 0.5  // Cycles per second
@@ -214,8 +277,18 @@ class SpiralEngine: ObservableObject {
             let wobbleFrequency = 0.3  // Slower wobble
             let wobbleAmplitude = 15.0  // Degrees of tilt
             state.spiralTiltX = wobbleAmplitude * sin(elapsed * wobbleFrequency * 2.0 * .pi)
-            state.spiralTiltY = wobbleAmplitude * cos(elapsed * wobbleFrequency * 1.7 * .pi)  // Slightly different frequency for more complex motion
+            state.spiralTiltY = wobbleAmplitude * cos(elapsed * wobbleFrequency * 1.7 * .pi)
+
+            // Separate wobble for counter spiral (different frequencies for independent motion)
+            if state.counterSpiralImage != nil {
+                let counterWobbleFreq = 0.23  // Different frequency
+                state.counterSpiralTiltX = wobbleAmplitude * sin(elapsed * counterWobbleFreq * 2.3 * .pi + 1.2)
+                state.counterSpiralTiltY = wobbleAmplitude * cos(elapsed * counterWobbleFreq * 1.9 * .pi + 0.8)
+            }
         }
+
+        // Don't advance words/images while waiting for user input
+        guard !state.isWaiting else { return }
 
         // Decrement frequency counters for images and words using time-based scaling
         for key in state.frequencies.keys {
@@ -286,6 +359,10 @@ class SpiralEngine: ObservableObject {
             Task {
                 await processTextItem(item)
             }
+        } else {
+            // Text sequence exhausted - program has ended
+            state.programEnded = true
+            stop()
         }
     }
 
@@ -390,18 +467,70 @@ class SpiralEngine: ObservableObject {
 
                 // Parse and apply markup commands, get stripped text
                 let cleanSentence = parseAndApplyMarkupCommands(sentence)
-
-                // Speak the stripped sentence
-                speechSynthesizer.speak(cleanSentence)
-                state.isSpeaking = true
                 sentenceBuffer = []
 
-                // Words will be displayed via didSpeakWord callback (which will strip markup)
+                // If already speaking, queue this sentence; otherwise start speaking and pre-buffer
+                if state.isSpeaking {
+                    speechQueue.append(.sentence(cleanSentence))
+                } else {
+                    speechSynthesizer.speak(cleanSentence)
+                    state.isSpeaking = true
+
+                    // Pre-buffer all words and non-interactive commands
+                    await prebufferSpeechQueue()
+                }
+
+                // Words will be displayed via didSpeakWord callback
             }
         } else {
             // No speech - parse markup on individual words and display WITHOUT markup
             let cleanText = parseAndApplyMarkupCommands(substituted)
             state.currentWord = cleanText
+        }
+    }
+
+    /// Pre-buffer sentences and commands until we hit an interactive command
+    /// This prevents pauses between sentences during speech
+    private func prebufferSpeechQueue() async {
+        while state.wordsIndex < state.textSequence.count {
+            let item = state.textSequence[state.wordsIndex]
+
+            // Check if it's a command
+            if item.hasPrefix("!") {
+                // Extract command name
+                let trimmed = String(item.dropFirst())
+                let commandName = trimmed.split(separator: "(").first.map(String.init) ?? trimmed
+
+                // Stop if it's an interactive command
+                if interactiveCommands.contains(commandName) {
+                    break
+                }
+
+                // Non-interactive command - queue it and continue
+                state.wordsIndex += 1
+                speechQueue.append(.command(item))
+                continue
+            }
+
+            // Regular word - process it
+            state.wordsIndex += 1
+
+            // Perform variable substitution
+            let substituted = await performVariableSubstitution(item)
+
+            // Add to sentence buffer
+            sentenceBuffer.append(substituted)
+
+            // Check if this word ends a sentence
+            let strippedForCheck = stripMarkup(substituted)
+            if strippedForCheck.hasSuffix(".") || strippedForCheck.hasSuffix("!") ||
+               strippedForCheck.hasSuffix("?") || strippedForCheck.hasSuffix(",") {
+                // Complete sentence - add to queue
+                let sentence = sentenceBuffer.joined(separator: " ")
+                let cleanSentence = parseAndApplyMarkupCommands(sentence)
+                sentenceBuffer = []
+                speechQueue.append(.sentence(cleanSentence))
+            }
         }
     }
 
@@ -461,8 +590,7 @@ class SpiralEngine: ObservableObject {
 
         let commandName = String(trimmed[..<parenIndex])
 
-        // For now, implement basic commands directly
-        // TODO: Replace with CommandDispatcher in Phase 3
+        // Command dispatcher - handles all script commands
         switch commandName {
         case "spiral_on":
             state.drawSpiral = true
@@ -503,12 +631,12 @@ class SpiralEngine: ObservableObject {
                 state.isSpeaking = true
             }
         case "whisper":
-            // TODO: Implement whisper with lower volume
+            // Speak at lower volume (30% of normal)
             if let args = extractArgs(from: trimmed) {
                 let text = await performVariableSubstitution(args.first ?? "")
                 // Parse and apply markup commands, get stripped text
                 let cleanText = parseAndApplyMarkupCommands(text)
-                speechSynthesizer.speak(cleanText)
+                speechSynthesizer.speak(cleanText, volume: 0.3)
                 state.isSpeaking = true
             }
 
@@ -592,8 +720,8 @@ class SpiralEngine: ObservableObject {
                     scriptName = String(scriptRef.dropFirst(5)) // Remove "self."
                 } else if scriptRef.hasPrefix("parent.") {
                     scriptName = String(scriptRef.dropFirst(7)) // Remove "parent."
-                    // TODO: Handle parent script loading if needed
-                    print("Warning: parent script references not yet fully supported")
+                    // Parent script references would load from the base config if inheritance is used
+                    print("Note: parent script references load from current config")
                 } else {
                     scriptName = scriptRef
                 }
@@ -607,6 +735,7 @@ class SpiralEngine: ObservableObject {
             }
 
         case "quit":
+            state.programEnded = true
             stop()
 
         // User input commands
@@ -645,6 +774,74 @@ class SpiralEngine: ObservableObject {
                 await setPreference(prompt: prompt, variableName: varName)
             }
 
+        case "mantra":
+            // Demand user type exact text back before continuing (typing only)
+            // Syntax: !mantra('I obey')
+            // With timeout: !mantra('I obey', 30, 'self.retrain') - jump to script
+            // With timeout: !mantra('I obey', 30, ['word1', 'word2']) - insert words
+            if let mantraArgs = extractMantraArgs(from: trimmed) {
+                let substituted = await performVariableSubstitution(mantraArgs.expectedText)
+                await showMantra(
+                    expectedText: substituted,
+                    timeoutSeconds: mantraArgs.timeoutSeconds,
+                    timeoutAction: mantraArgs.timeoutAction,
+                    autoStartMic: false
+                )
+            }
+
+        case "speak_mantra":
+            // Demand user speak or type exact text back (mic auto-starts)
+            // Same syntax as !mantra but microphone automatically starts
+            if let mantraArgs = extractMantraArgs(from: trimmed) {
+                let substituted = await performVariableSubstitution(mantraArgs.expectedText)
+                await showMantra(
+                    expectedText: substituted,
+                    timeoutSeconds: mantraArgs.timeoutSeconds,
+                    timeoutAction: mantraArgs.timeoutAction,
+                    autoStartMic: true
+                )
+            }
+
+        case "cond":
+            // Syntax: !cond('condition', ['word1', 'word2'], ['else1', 'else2'])
+            // With one array: show words if condition is FALSE (guard pattern)
+            // With two arrays: show first if TRUE, second if FALSE (if-then-else)
+            if let (condition, thenWords, elseWords) = extractCondArgs(from: trimmed) {
+                let conditionResult = evaluateCondition(condition)
+
+                let wordsToInsert: [String]
+                if elseWords != nil {
+                    // Two arrays: standard if-then-else
+                    wordsToInsert = conditionResult ? thenWords : (elseWords ?? [])
+                } else {
+                    // One array: show if condition is FALSE (guard pattern)
+                    wordsToInsert = conditionResult ? [] : thenWords
+                }
+
+                // Insert words into text sequence after current position
+                if !wordsToInsert.isEmpty {
+                    let insertIndex = state.wordsIndex + 1
+                    state.textSequence.insert(contentsOf: wordsToInsert, at: insertIndex)
+                }
+            }
+
+        // Camera commands
+        case "camera_snapshot":
+            await captureAndSavePhoto()
+
+        case "load_lastCameraShot":
+            // Load the most recent captured image into state
+            await loadLastCapturedImage()
+
+        case "show_lastCamImage":
+            // Display the last captured camera image
+            state.showLastCamImage = true
+            state.drawImages = true
+
+        case "hide_lastCamImage":
+            // Hide the camera image
+            state.showLastCamImage = false
+
         default:
             print("Warning: Unimplemented command: \(commandName)")
         }
@@ -673,6 +870,291 @@ class SpiralEngine: ObservableObject {
             }
             return trimmed
         }
+    }
+
+    /// Timeout action for mantra command
+    enum MantraTimeoutAction {
+        case jump(scriptName: String)
+        case insertWords([String])
+    }
+
+    /// Parsed arguments for !mantra command
+    struct MantraArgs {
+        let expectedText: String
+        let timeoutSeconds: Int?
+        let timeoutAction: MantraTimeoutAction?
+    }
+
+    /// Extract arguments for !mantra command
+    /// Syntax: !mantra('text') or !mantra('text', timeout, 'script') or !mantra('text', timeout, ['words'])
+    private func extractMantraArgs(from commandString: String) -> MantraArgs? {
+        guard let parenStart = commandString.firstIndex(of: "("),
+              let parenEnd = commandString.lastIndex(of: ")") else {
+            return nil
+        }
+
+        let argsString = String(commandString[commandString.index(after: parenStart)..<parenEnd])
+        var index = argsString.startIndex
+
+        // Skip whitespace
+        while index < argsString.endIndex && argsString[index].isWhitespace {
+            index = argsString.index(after: index)
+        }
+
+        // Extract expected text (first quoted string)
+        var expectedText = ""
+        if index < argsString.endIndex {
+            let quoteChar = argsString[index]
+            if quoteChar == "'" || quoteChar == "\"" {
+                index = argsString.index(after: index)
+                let textStart = index
+                while index < argsString.endIndex && argsString[index] != quoteChar {
+                    index = argsString.index(after: index)
+                }
+                expectedText = String(argsString[textStart..<index])
+                if index < argsString.endIndex {
+                    index = argsString.index(after: index) // Skip closing quote
+                }
+            }
+        }
+
+        guard !expectedText.isEmpty else {
+            print("Warning: Could not parse !mantra expected text")
+            return nil
+        }
+
+        // Skip to comma (if any)
+        while index < argsString.endIndex && argsString[index] != "," {
+            index = argsString.index(after: index)
+        }
+
+        // No more arguments - simple mantra with no timeout
+        if index >= argsString.endIndex {
+            return MantraArgs(expectedText: expectedText, timeoutSeconds: nil, timeoutAction: nil)
+        }
+
+        // Skip comma and whitespace
+        index = argsString.index(after: index)
+        while index < argsString.endIndex && argsString[index].isWhitespace {
+            index = argsString.index(after: index)
+        }
+
+        // Extract timeout number
+        var timeoutStr = ""
+        while index < argsString.endIndex && argsString[index].isNumber {
+            timeoutStr.append(argsString[index])
+            index = argsString.index(after: index)
+        }
+
+        guard let timeoutSeconds = Int(timeoutStr) else {
+            print("Warning: Could not parse !mantra timeout value")
+            return MantraArgs(expectedText: expectedText, timeoutSeconds: nil, timeoutAction: nil)
+        }
+
+        // Skip to comma
+        while index < argsString.endIndex && argsString[index] != "," {
+            index = argsString.index(after: index)
+        }
+
+        if index >= argsString.endIndex {
+            // Has timeout but no action
+            return MantraArgs(expectedText: expectedText, timeoutSeconds: timeoutSeconds, timeoutAction: nil)
+        }
+
+        // Skip comma and whitespace
+        index = argsString.index(after: index)
+        while index < argsString.endIndex && argsString[index].isWhitespace {
+            index = argsString.index(after: index)
+        }
+
+        // Check if it's an array or a string
+        if index < argsString.endIndex && argsString[index] == "[" {
+            // Parse array of words
+            index = argsString.index(after: index) // Skip '['
+            var words: [String] = []
+            var currentWord = ""
+            var inQuote = false
+            var quoteChar: Character = "'"
+
+            while index < argsString.endIndex {
+                let char = argsString[index]
+
+                if char == "]" && !inQuote {
+                    if !currentWord.isEmpty {
+                        words.append(currentWord)
+                    }
+                    break
+                } else if (char == "'" || char == "\"") && !inQuote {
+                    inQuote = true
+                    quoteChar = char
+                } else if char == quoteChar && inQuote {
+                    inQuote = false
+                    words.append(currentWord)
+                    currentWord = ""
+                } else if char == "," && !inQuote {
+                    // Skip comma between array elements
+                } else if inQuote {
+                    currentWord.append(char)
+                }
+
+                index = argsString.index(after: index)
+            }
+
+            return MantraArgs(expectedText: expectedText, timeoutSeconds: timeoutSeconds, timeoutAction: .insertWords(words))
+
+        } else if index < argsString.endIndex && (argsString[index] == "'" || argsString[index] == "\"") {
+            // Parse script name string
+            let quoteChar = argsString[index]
+            index = argsString.index(after: index)
+            let scriptStart = index
+            while index < argsString.endIndex && argsString[index] != quoteChar {
+                index = argsString.index(after: index)
+            }
+            var scriptName = String(argsString[scriptStart..<index])
+
+            // Strip "self." prefix if present
+            if scriptName.hasPrefix("self.") {
+                scriptName = String(scriptName.dropFirst(5))
+            }
+
+            return MantraArgs(expectedText: expectedText, timeoutSeconds: timeoutSeconds, timeoutAction: .jump(scriptName: scriptName))
+        }
+
+        return MantraArgs(expectedText: expectedText, timeoutSeconds: timeoutSeconds, timeoutAction: nil)
+    }
+
+    /// Extract arguments for !cond command which has special syntax with arrays
+    /// Returns (condition, thenWords, elseWords?) or nil if parsing fails
+    private func extractCondArgs(from commandString: String) -> (String, [String], [String]?)? {
+        guard let parenStart = commandString.firstIndex(of: "("),
+              let parenEnd = commandString.lastIndex(of: ")") else {
+            return nil
+        }
+
+        let argsString = String(commandString[commandString.index(after: parenStart)..<parenEnd])
+
+        // Parse: 'condition', ['word1', 'word2'], ['else1', 'else2']
+        // Step 1: Find the condition (first quoted string)
+        var index = argsString.startIndex
+        var condition = ""
+        var arrays: [[String]] = []
+
+        // Skip whitespace
+        while index < argsString.endIndex && argsString[index].isWhitespace {
+            index = argsString.index(after: index)
+        }
+
+        // Extract condition string (quoted)
+        if index < argsString.endIndex {
+            let quoteChar = argsString[index]
+            if quoteChar == "'" || quoteChar == "\"" {
+                index = argsString.index(after: index)
+                let condStart = index
+                while index < argsString.endIndex && argsString[index] != quoteChar {
+                    index = argsString.index(after: index)
+                }
+                condition = String(argsString[condStart..<index])
+                if index < argsString.endIndex {
+                    index = argsString.index(after: index) // Skip closing quote
+                }
+            }
+        }
+
+        // Parse remaining arrays
+        while index < argsString.endIndex {
+            // Skip to next '['
+            while index < argsString.endIndex && argsString[index] != "[" {
+                index = argsString.index(after: index)
+            }
+
+            if index >= argsString.endIndex { break }
+
+            // Parse array
+            index = argsString.index(after: index) // Skip '['
+            var words: [String] = []
+            var currentWord = ""
+            var inQuote = false
+            var quoteChar: Character = "'"
+
+            while index < argsString.endIndex {
+                let char = argsString[index]
+
+                if char == "]" && !inQuote {
+                    // End of array
+                    if !currentWord.isEmpty {
+                        words.append(currentWord)
+                    }
+                    index = argsString.index(after: index)
+                    break
+                } else if (char == "'" || char == "\"") && !inQuote {
+                    inQuote = true
+                    quoteChar = char
+                } else if char == quoteChar && inQuote {
+                    inQuote = false
+                    words.append(currentWord)
+                    currentWord = ""
+                } else if char == "," && !inQuote {
+                    // Skip comma between array elements
+                } else if inQuote {
+                    currentWord.append(char)
+                }
+
+                index = argsString.index(after: index)
+            }
+
+            arrays.append(words)
+        }
+
+        guard !condition.isEmpty, arrays.count >= 1 else {
+            print("Warning: Could not parse !cond arguments: \(argsString)")
+            return nil
+        }
+
+        let thenWords = arrays[0]
+        let elseWords = arrays.count >= 2 ? arrays[1] : nil
+
+        return (condition, thenWords, elseWords)
+    }
+
+    /// Evaluate a condition string for !cond command
+    /// Supports: self.draw_image, self.config.fullscreen, not <condition>
+    private func evaluateCondition(_ condition: String) -> Bool {
+        var cond = condition.trimmingCharacters(in: .whitespaces)
+        var negate = false
+
+        // Handle "not" prefix
+        if cond.lowercased().hasPrefix("not ") {
+            negate = true
+            cond = String(cond.dropFirst(4)).trimmingCharacters(in: .whitespaces)
+        }
+
+        var result: Bool
+
+        switch cond {
+        case "self.draw_image", "self.drawImages":
+            result = state.drawImages
+        case "self.draw_spiral", "self.drawSpiral":
+            result = state.drawSpiral
+        case "self.draw_words", "self.drawWords":
+            result = state.drawWords
+        case "self.speak_words", "self.speakWords":
+            result = state.speakWords
+        case "self.config.fullscreen":
+            result = config.properties.fullscreen
+        case "self.is_fullscreen", "self.isFullscreen":
+            result = state.isFullscreen
+        default:
+            // Check if it's a variable reference
+            if let varValue = state.variables[cond] {
+                // Truthy check: non-empty string is true
+                result = !varValue.isEmpty && varValue.lowercased() != "false" && varValue != "0"
+            } else {
+                print("Warning: Unknown condition '\(cond)' in !cond, defaulting to false")
+                result = false
+            }
+        }
+
+        return negate ? !result : result
     }
 
     // MARK: - Script Loading
@@ -781,21 +1263,157 @@ class SpiralEngine: ObservableObject {
             state.isWaiting = true
         }
     }
+
+    /// Demand user type or speak exact text back (mantra repetition)
+    /// Optional timeout with action (jump to script or insert words)
+    /// autoStartMic: if true, microphone starts automatically (speak_mantra)
+    private func showMantra(expectedText: String, timeoutSeconds: Int?, timeoutAction: MantraTimeoutAction?, autoStartMic: Bool) async {
+        await withCheckedContinuation { continuation in
+            // Create timeout handler if needed
+            let onTimeout: (() -> Void)? = timeoutAction.map { action in
+                return {
+                    self.state.currentQuestion = nil
+                    self.state.isWaiting = false
+
+                    switch action {
+                    case .jump(let scriptName):
+                        // Jump to the specified script
+                        do {
+                            try self.loadScript(named: scriptName)
+                            print("Mantra timeout: jumped to script '\(scriptName)'")
+                        } catch {
+                            print("Error jumping to timeout script '\(scriptName)': \(error)")
+                        }
+
+                    case .insertWords(let words):
+                        // Insert words after current position
+                        if !words.isEmpty {
+                            let insertIndex = self.state.wordsIndex
+                            self.state.textSequence.insert(contentsOf: words, at: insertIndex)
+                            print("Mantra timeout: inserted \(words.count) words")
+                        }
+                    }
+
+                    continuation.resume()
+                }
+            }
+
+            state.currentQuestion = .mantra(
+                expectedText: expectedText,
+                timeoutSeconds: timeoutSeconds,
+                autoStartMic: autoStartMic,
+                onComplete: {
+                    self.state.currentQuestion = nil
+                    self.state.isWaiting = false
+                    continuation.resume()
+                },
+                onTimeout: onTimeout
+            )
+            state.isWaiting = true
+        }
+    }
+
+    // MARK: - Camera Methods
+
+    /// Capture a photo and save it to the CapturedImages directory
+    private func captureAndSavePhoto() async {
+        let cameraManager = CameraManager.shared
+
+        // Capture the photo
+        guard let cgImage = await cameraManager.capturePhoto() else {
+            print("Camera capture failed: \(cameraManager.lastError ?? "Unknown error")")
+            return
+        }
+
+        // Get save location
+        guard let capturedDir = iCloudResourceManager.shared.getCapturedImagesURL() else {
+            print("Could not get captured images directory")
+            return
+        }
+
+        // Generate filename and save
+        let filename = iCloudResourceManager.shared.generateCapturedImageFilename()
+        let saveURL = capturedDir.appendingPathComponent(filename)
+
+        if cameraManager.saveImage(cgImage, to: saveURL) {
+            state.lastCapturedImage = cgImage
+            state.lastCapturedImageURL = saveURL
+            print("Saved camera capture to: \(saveURL.path)")
+        } else {
+            print("Failed to save camera capture: \(cameraManager.lastError ?? "Unknown error")")
+        }
+    }
+
+    /// Load the most recent captured image into state
+    private func loadLastCapturedImage() async {
+        // Check if we already have a captured image in state
+        if state.lastCapturedImage != nil {
+            return
+        }
+
+        // Try to load the most recent captured image from disk
+        guard let lastURL = iCloudResourceManager.shared.getLastCapturedImageURL() else {
+            print("No captured images found")
+            return
+        }
+
+        if let cgImage = CameraManager.loadImage(from: lastURL) {
+            state.lastCapturedImage = cgImage
+            state.lastCapturedImageURL = lastURL
+            print("Loaded last captured image: \(lastURL.lastPathComponent)")
+        } else {
+            print("Could not load image from: \(lastURL.path)")
+        }
+    }
 }
 
 // MARK: - SpeechSynthesizerDelegate
 
 extension SpiralEngine: SpeechSynthesizerDelegate {
     func synthesizer(_ synthesizer: SpeechSynthesizerProtocol, didSpeakWord word: String) {
-        // Strip markup from the word before displaying it
-        let strippedWord = stripMarkup(word)
+        // Strip markup and trailing punctuation from the word before displaying it
+        var strippedWord = stripMarkup(word)
+        // Remove trailing punctuation (period, comma, exclamation, question mark)
+        while let last = strippedWord.last, ".!?,;:".contains(last) {
+            strippedWord.removeLast()
+        }
         state.currentWord = strippedWord
         state.spokenWord = strippedWord
     }
 
     func synthesizerDidFinish(_ synthesizer: SpeechSynthesizerProtocol) {
-        state.isSpeaking = false
         state.spokenWord = ""
-        state.currentWord = ""  // Clear the display
+
+        // Process queue items until we hit a sentence (to speak) or queue is empty
+        Task {
+            await processNextQueueItem()
+        }
+    }
+
+    /// Process items from the speech queue - execute commands, speak sentences
+    private func processNextQueueItem() async {
+        while !speechQueue.isEmpty {
+            let item = speechQueue.removeFirst()
+
+            switch item {
+            case .sentence(let text):
+                // Speak this sentence and return (will continue when speech finishes)
+                speechSynthesizer.speak(text)
+                // state.isSpeaking stays true
+                return
+
+            case .command(let commandString):
+                // Execute the command and wait for it to complete before continuing
+                await executeCommand(commandString)
+            }
+        }
+
+        // Queue is empty
+        state.isSpeaking = false
+
+        // Only clear displayed word if words were on during speech
+        if state.drawWords {
+            state.currentWord = ""
+        }
     }
 }

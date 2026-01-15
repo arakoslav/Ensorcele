@@ -176,14 +176,15 @@ class SpiralRenderer {
     }
 
     /// Load custom spiral image from bundle
+    /// Note: Custom spiral images are not currently used - all spirals are procedurally generated.
+    /// This function exists as a placeholder if bitmap spiral support is needed in the future.
     private static func loadCustomSpiral(
         named name: String,
         config: SpiralConfig
     ) -> [CGImage] {
-        // TODO: Load and rotate custom spiral image
-        print("Loading custom spiral: \(name)")
+        print("Loading custom spiral: \(name) (not implemented - using generated spirals)")
 
-        // For now, fall back to generated spiral
+        // Custom spiral images not supported - all spirals are procedurally generated
         return []
     }
 }

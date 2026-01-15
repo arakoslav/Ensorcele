@@ -21,6 +21,7 @@ class SpiralState: ObservableObject {
     @Published var drawWords: Bool = false
     @Published var drawImages: Bool = false
     @Published var speakWords: Bool = false
+    @Published var activeSpiralType: SpiralType = .fermat
 
     // MARK: - Current Indices
 
@@ -35,6 +36,7 @@ class SpiralState: ObservableObject {
     @Published var isWaiting: Bool = false  // Waiting for user input
     @Published var isSpeaking: Bool = false
     @Published var isFullscreen: Bool = false
+    @Published var programEnded: Bool = false  // Program finished, should exit to config picker
 
     // MARK: - Speech State
 
@@ -56,14 +58,24 @@ class SpiralState: ObservableObject {
 
     var textSequence: [String] = []
     var spiralImage: CGImage? = nil  // Single base spiral image
+    var counterSpiralImage: CGImage? = nil  // Counter-rotating spiral for twist type
     @Published var spiralRotation: Double = 0.0  // Current rotation angle in degrees
+    @Published var counterSpiralRotation: Double = 0.0  // Counter rotation (opposite direction)
     @Published var spiralScale: Double = 1.0  // Pulsing scale effect
     @Published var spiralTiltX: Double = 0.0  // Wobble tilt on X axis
     @Published var spiralTiltY: Double = 0.0  // Wobble tilt on Y axis
+    @Published var counterSpiralTiltX: Double = 0.0  // Counter spiral wobble X
+    @Published var counterSpiralTiltY: Double = 0.0  // Counter spiral wobble Y
     var images: [CGImage] = []  // Shuffled images for cycling
     var unshuffledImages: [CGImage] = []  // Unshuffled for hold_image lookup
     var imageFilenames: [String] = []  // Filenames corresponding to unshuffled images
     var subliminalList: [String] = []
+
+    // MARK: - Camera Capture State
+
+    var lastCapturedImage: CGImage? = nil  // Last camera-captured image
+    @Published var showLastCamImage: Bool = false  // Display the last captured camera image
+    var lastCapturedImageURL: URL? = nil  // URL of the saved camera image
 
     // MARK: - Timing (Frequency Counters)
 
@@ -87,6 +99,7 @@ class SpiralState: ObservableObject {
         case yesNo(question: String, onYes: () -> Void, onNo: () -> Void)
         case challenge(prompt: String, variableName: String, completion: (String) -> Void)
         case setPref(prompt: String, variableName: String, completion: (String) -> Void)
+        case mantra(expectedText: String, timeoutSeconds: Int?, autoStartMic: Bool, onComplete: () -> Void, onTimeout: (() -> Void)?)
     }
 
     // MARK: - Helper Methods
@@ -97,19 +110,24 @@ class SpiralState: ObservableObject {
         drawWords = false
         drawImages = false
         speakWords = false
+        activeSpiralType = .fermat
 
         imageIndex = 0
         wordsIndex = 0
         holdImageIndex = -1
         isCapturingImageName = false
         spiralRotation = 0.0
+        counterSpiralRotation = 0.0
         spiralScale = 1.0
         spiralTiltX = 0.0
         spiralTiltY = 0.0
+        counterSpiralTiltX = 0.0
+        counterSpiralTiltY = 0.0
 
         isRunning = false
         isWaiting = false
         isSpeaking = false
+        programEnded = false
 
         currentSpeechRate = nil
 
@@ -122,6 +140,11 @@ class SpiralState: ObservableObject {
         variables = [:]
         textSequence = []
         currentQuestion = nil
+
+        // Camera state
+        lastCapturedImage = nil
+        showLastCamImage = false
+        // Note: lastCapturedImageURL is preserved across sessions
     }
 
     /// Initialize frequency counters from config

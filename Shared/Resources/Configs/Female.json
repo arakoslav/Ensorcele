@@ -21,7 +21,6 @@
   },
   "scripts": {
     "body": [
-      "parent.body",
       "Just",
       "watch.",
       "You",
@@ -239,9 +238,8 @@
     "text": [
       "!pause_music()",
       "!words_on()",
-      "!open_question('What is your name?', 'name')",
-      "!open_question('Who is your Mistress?', 'master')",
-      "!prompt('Hit return to start')",
+      "!set_pref('What is your name?', 'name')",
+      "!set_pref('Who is your Mistress?', 'master')",
       "!unpause_music()",
       "!jump('self.body')"
     ]

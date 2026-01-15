@@ -9,6 +9,7 @@ import SwiftUI
 
 struct SpiralView: View {
     let config: SpiralConfig
+    let savedState: SavedSessionState?
     @StateObject private var state = SpiralState()
     @StateObject private var engine: SpiralEngine
     @State private var isLoading = true
@@ -18,8 +19,9 @@ struct SpiralView: View {
     @State private var tempoMultiplier: Double = 1.0
     @Environment(\.dismiss) private var dismiss
 
-    init(config: SpiralConfig) {
+    init(config: SpiralConfig, savedState: SavedSessionState? = nil) {
         self.config = config
+        self.savedState = savedState
         let state = SpiralState()
         _state = StateObject(wrappedValue: state)
         _engine = StateObject(wrappedValue: SpiralEngine(state: state, config: config))
@@ -69,6 +71,8 @@ struct SpiralView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                     #if os(macOS)
                     .onContinuousHover { _ in onMouseMoved() }
+                    #else
+                    .simultaneousGesture(TapGesture().onEnded { onUserInteraction() })
                     #endif
 
                     // Bottom tempo slider
@@ -83,12 +87,12 @@ struct SpiralView: View {
                                 Text("0.5x")
                                     .font(.caption2)
                                     .foregroundColor(.white.opacity(0.5))
-                                Slider(value: $tempoMultiplier, in: 0.5...2.0, step: 0.1)
+                                Slider(value: $tempoMultiplier, in: 0.5...5.0, step: 0.1)
                                     .frame(maxWidth: 300)
                                     .onChange(of: tempoMultiplier) { oldValue, newValue in
                                         adjustTempo(newValue)
                                     }
-                                Text("2.0x")
+                                Text("5.0x")
                                     .font(.caption2)
                                     .foregroundColor(.white.opacity(0.5))
                             }
@@ -101,6 +105,8 @@ struct SpiralView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     #if os(macOS)
                     .onContinuousHover { _ in onMouseMoved() }
+                    #else
+                    .simultaneousGesture(TapGesture().onEnded { onUserInteraction() })
                     #endif
 
                     // Left sidebar with table of contents
@@ -142,10 +148,99 @@ struct SpiralView: View {
                     .transition(.move(edge: .leading).combined(with: .opacity))
                     #if os(macOS)
                     .onContinuousHover { _ in onMouseMoved() }
+                    #else
+                    .simultaneousGesture(TapGesture().onEnded { onUserInteraction() })
+                    #endif
+
+                    // Right sidebar with controls
+                    HStack {
+                        Spacer()
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Controls")
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.5))
+                                .padding(.bottom, 4)
+
+                            // Spiral type picker - using buttons instead of Menu for reliable iPad touch
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Spiral")
+                                    .font(.caption2)
+                                    .foregroundColor(.white.opacity(0.5))
+
+                                ForEach(SpiralType.allCases, id: \.self) { type in
+                                    Button {
+                                        state.activeSpiralType = type
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            Text(type.rawValue.capitalized)
+                                                .font(.caption)
+                                            Spacer()
+                                            if state.activeSpiralType == type {
+                                                Image(systemName: "checkmark")
+                                                    .font(.caption2)
+                                            }
+                                        }
+                                        .foregroundColor(state.activeSpiralType == type ? .white : .white.opacity(0.6))
+                                        .padding(.vertical, 6)
+                                        .padding(.horizontal, 10)
+                                        .background(state.activeSpiralType == type ? Color.white.opacity(0.2) : Color.white.opacity(0.1))
+                                        .cornerRadius(4)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+
+                            // Images toggle
+                            Button(action: {
+                                state.drawImages.toggle()
+                            }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: state.drawImages ? "photo.fill" : "photo")
+                                        .font(.caption)
+                                    Text("Images")
+                                        .font(.caption)
+                                }
+                                .foregroundColor(state.drawImages ? .white : .white.opacity(0.5))
+                                .padding(.vertical, 6)
+                                .padding(.horizontal, 10)
+                                .background(state.drawImages ? Color.white.opacity(0.2) : Color.white.opacity(0.1))
+                                .cornerRadius(4)
+                            }
+                            .buttonStyle(.plain)
+
+                            // Speaking toggle
+                            Button(action: {
+                                state.speakWords.toggle()
+                            }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: state.speakWords ? "speaker.wave.2.fill" : "speaker.slash")
+                                        .font(.caption)
+                                    Text("Speaking")
+                                        .font(.caption)
+                                }
+                                .foregroundColor(state.speakWords ? .white : .white.opacity(0.5))
+                                .padding(.vertical, 6)
+                                .padding(.horizontal, 10)
+                                .background(state.speakWords ? Color.white.opacity(0.2) : Color.white.opacity(0.1))
+                                .cornerRadius(4)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .frame(width: 150)
+                        .padding()
+                        .background(Color.black.opacity(0.5))
+                        .cornerRadius(8)
+                        .padding(.trailing, 20)
+                    }
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    #if os(macOS)
+                    .onContinuousHover { _ in onMouseMoved() }
+                    #else
+                    .simultaneousGesture(TapGesture().onEnded { onUserInteraction() })
                     #endif
                 }
 
-                // Invisible overlay to track mouse movement (only blocks when UI is hidden)
+                // Invisible overlay to track mouse/touch movement
                 #if os(macOS)
                 Color.clear
                     .contentShape(Rectangle())
@@ -159,18 +254,21 @@ struct SpiralView: View {
                         }
                     }
                 #else
-                // On iOS, use tap gesture to show/reset UI
-                Color.clear
-                    .contentShape(Rectangle())
-                    .allowsHitTesting(!showUI)  // Don't block interaction when UI is visible
-                    .onTapGesture {
-                        onUserInteraction()
-                    }
+                // On iOS, only show tap overlay when UI is hidden
+                // This prevents gesture conflicts with control buttons
+                // When UI is visible, taps on control panels reset the timer via simultaneousGesture
+                if !showUI {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            onUserInteraction()
+                        }
+                }
                 #endif
 
-                // Question dialogs (modal overlays)
+                // Question dialogs (modal overlays) - light dim to keep spiral visible
                 if let question = state.currentQuestion {
-                    Color.black.opacity(0.8)
+                    Color.black.opacity(0.4)
                         .ignoresSafeArea()
 
                     switch question {
@@ -188,6 +286,9 @@ struct SpiralView: View {
 
                     case .setPref(let prompt, let variableName, let completion):
                         SetPrefDialog(prompt: prompt, variableName: variableName, onSubmit: completion)
+
+                    case .mantra(let expectedText, let timeoutSeconds, let autoStartMic, let onComplete, let onTimeout):
+                        MantraDialog(expectedText: expectedText, timeoutSeconds: timeoutSeconds, autoStartMic: autoStartMic, onComplete: onComplete, onTimeout: onTimeout)
                     }
                 }
             }
@@ -200,9 +301,19 @@ struct SpiralView: View {
                     await regenerateSpiral(size: newSize)
                 }
             }
+            .onChange(of: state.activeSpiralType) { oldType, newType in
+                Task {
+                    await regenerateSpiral(size: windowSize)
+                }
+            }
         }
         .task {
             await loadResources()
+        }
+        .onChange(of: state.programEnded) { _, ended in
+            if ended {
+                dismiss()
+            }
         }
         .onAppear {
             #if os(iOS)
@@ -271,12 +382,15 @@ struct SpiralView: View {
         }
     }
 
-    /// Regenerate spiral for new window size
+    /// Regenerate spiral for new window size or type change
     private func regenerateSpiral(size: CGSize) async {
         guard size != .zero else { return }
-        print("Regenerating spiral for size: \(size)")
+        let spiralType = state.activeSpiralType
+        print("Regenerating spiral for size: \(size), type: \(spiralType)")
         await Task {
-            state.spiralImage = SpiralRenderer.generateSpiral(config: config, size: size)
+            state.spiralImage = SpiralRenderer.generateSpiral(config: config, size: size, spiralType: spiralType)
+            // Generate counter-rotating layer for twist spirals
+            state.counterSpiralImage = SpiralRenderer.generateCounterSpiral(config: config, size: size, spiralType: spiralType)
         }.value
     }
 
@@ -310,22 +424,44 @@ struct SpiralView: View {
             state.imageFilenames = filenames
         }.value
 
-        // Load initial script (usually "body")
-        do {
-            try engine.loadScript(named: "body")
-        } catch {
-            print("Warning: Could not load 'body' script: \(error)")
+        // Check if we're resuming from saved state
+        if let saved = savedState {
+            // Restore saved session
+            engine.restoreSession(from: saved)
+            state.config = config
+            state.initializeFrequencies(from: config)
+            state.activeSpiralType = config.properties.spiralType
+
+            // Merge saved variables with shared variables (saved takes precedence for session vars)
+            var mergedVars = SharedVariables.shared.asDictionary()
+            for (key, value) in saved.variables {
+                mergedVars[key] = value
+            }
+            state.variables = mergedVars
+
+            print("Resumed session for '\(config.name)' at word \(saved.wordsIndex)")
+        } else {
+            // Fresh start - load initial script (usually "text")
+            do {
+                try engine.loadScript(named: "text")
+            } catch {
+                print("Warning: Could not load 'text' script: \(error)")
+            }
+
+            // Initialize state
+            state.config = config
+            state.initializeFrequencies(from: config)
+            state.drawSpiral = true
+            state.drawWords = true
+            state.drawImages = false  // Start with images off, turn on with !images_on()
+            state.activeSpiralType = config.properties.spiralType
+
+            // Load shared variables (name, master, gender)
+            state.variables = SharedVariables.shared.asDictionary()
+
+            // Clear any old saved state for fresh start
+            SessionStateManager.shared.clearState(for: config.name)
         }
-
-        // Initialize state
-        state.config = config
-        state.initializeFrequencies(from: config)
-        state.drawSpiral = true
-        state.drawWords = true
-        state.drawImages = false  // Start with images off, turn on with !images_on()
-
-        // Load shared variables (name, master, gender)
-        state.variables = SharedVariables.shared.asDictionary()
 
         isLoading = false
 
@@ -352,7 +488,15 @@ struct SpiralRenderView: View {
 
             // Spiral layer (middle)
             if state.drawSpiral, let spiral = state.spiralImage {
-                spiralImageView(spiral)
+                spiralImageView(spiral, rotation: state.spiralRotation,
+                               tiltX: state.spiralTiltX, tiltY: state.spiralTiltY)
+
+                // Counter-rotating layer for twist spirals (separate wobble surface)
+                if let counterSpiral = state.counterSpiralImage {
+                    spiralImageView(counterSpiral, rotation: state.counterSpiralRotation,
+                                   tiltX: state.counterSpiralTiltX, tiltY: state.counterSpiralTiltY)
+                        .blendMode(.screen)  // Blend with main spiral
+                }
             }
 
             // Background text (large, faded, vertically centered to full screen)
@@ -410,18 +554,18 @@ struct SpiralRenderView: View {
     }
 
     /// Spiral image with real-time rotation, scale pulsing, and wobble
-    private func spiralImageView(_ spiral: CGImage) -> some View {
+    private func spiralImageView(_ spiral: CGImage, rotation: Double, tiltX: Double, tiltY: Double) -> some View {
         GeometryReader { geometry in
             Image(decorative: spiral, scale: 1.0)
                 .opacity(Double(config.properties.alpha) / 255.0)
-                .rotationEffect(.degrees(state.spiralRotation))
+                .rotationEffect(.degrees(rotation))
                 .scaleEffect(state.spiralScale)
                 .rotation3DEffect(
-                    .degrees(state.spiralTiltX),
+                    .degrees(tiltX),
                     axis: (x: 1.0, y: 0.0, z: 0.0)
                 )
                 .rotation3DEffect(
-                    .degrees(state.spiralTiltY),
+                    .degrees(tiltY),
                     axis: (x: 0.0, y: 1.0, z: 0.0)
                 )
                 .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
@@ -432,16 +576,21 @@ struct SpiralRenderView: View {
     /// Current image
     @ViewBuilder
     private var currentImageView: some View {
-        // If hold_image is active, show the held image from unshuffled array (doesn't cycle)
-        // Otherwise show the normally cycling image from shuffled array
+        // Priority: camera captured image > held image > cycling image
         let imageToShow: CGImage? = {
+            // First priority: show last captured camera image if requested
+            if state.showLastCamImage, let camImage = state.lastCapturedImage {
+                return camImage
+            }
+            // Second priority: held image from hold_image command
             if state.holdImageIndex >= 0 && state.holdImageIndex < state.unshuffledImages.count {
                 return state.unshuffledImages[state.holdImageIndex]
-            } else if state.imageIndex < state.images.count {
-                return state.images[state.imageIndex]
-            } else {
-                return nil
             }
+            // Default: cycling image from shuffled array
+            if state.imageIndex < state.images.count {
+                return state.images[state.imageIndex]
+            }
+            return nil
         }()
 
         if let image = imageToShow {
@@ -458,33 +607,52 @@ struct SubliminalTextView: View {
     @ObservedObject var state: SpiralState
     let config: SpiralConfig
     @State private var position: CGPoint = .zero
+    @State private var viewSize: CGSize = .zero
 
     var body: some View {
-        if let subliminalColor = config.properties.subliminalColor,
-           let subliminalAlpha = config.properties.subliminalAlpha {
+        GeometryReader { geometry in
+            if let subliminalColor = config.properties.subliminalColor,
+               let subliminalAlpha = config.properties.subliminalAlpha {
 
-            let textColor = Color(
-                red: Double(subliminalColor[0]) / 255.0,
-                green: Double(subliminalColor[1]) / 255.0,
-                blue: Double(subliminalColor[2]) / 255.0
-            )
+                let textColor = Color(
+                    red: Double(subliminalColor[0]) / 255.0,
+                    green: Double(subliminalColor[1]) / 255.0,
+                    blue: Double(subliminalColor[2]) / 255.0
+                )
 
-            Text(state.subliminalText)
-                .font(.system(size: 32, weight: .bold))
-                .foregroundColor(textColor.opacity(Double(subliminalAlpha) / 255.0))
-                .position(position)
-                .onAppear {
-                    randomizePosition()
-                }
+                Text(state.subliminalText)
+                    .font(.system(size: 32, weight: .bold))
+                    .foregroundColor(textColor.opacity(Double(subliminalAlpha) / 255.0))
+                    .position(position)
+                    .onAppear {
+                        viewSize = geometry.size
+                        randomizePosition()
+                    }
+                    .onChange(of: geometry.size) { _, newSize in
+                        viewSize = newSize
+                        randomizePosition()
+                    }
+                    .onChange(of: state.subliminalText) { _, _ in
+                        // Potentially reposition when text changes based on probability
+                        let moveProbability = config.properties.subliminalMoveProbability ?? 100
+                        if Int.random(in: 1...100) <= moveProbability {
+                            randomizePosition()
+                        }
+                    }
+            }
         }
     }
 
     private func randomizePosition() {
-        // TODO: Implement probabilistic repositioning based on config
-        let scatter = config.properties.subliminalScatter ?? 200
+        // Use scatter from config (default 200) to determine position range from center
+        let scatter = CGFloat(config.properties.subliminalScatter ?? 200)
+        let centerX = viewSize.width / 2
+        let centerY = viewSize.height / 2
+
+        // Randomize position within scatter distance from center
         position = CGPoint(
-            x: CGFloat.random(in: 100...700),
-            y: CGFloat.random(in: 100...500)
+            x: centerX + CGFloat.random(in: -scatter...scatter),
+            y: centerY + CGFloat.random(in: -scatter...scatter)
         )
     }
 }
