@@ -127,37 +127,81 @@ class iCloudResourceManager {
         return Bundle.main.url(forResource: name, withExtension: nil, subdirectory: spiralsDir)
     }
 
+    /// Info about a config file including its subdirectory
+    struct ConfigFileInfo {
+        let url: URL
+        let subdirectory: String?  // nil for root Configs directory
+    }
+
     /// List all available config files (bundle preferred, plus local-only configs)
+    /// Now recursively scans subdirectories
     func listConfigs() -> [URL] {
-        var configsByName: [String: URL] = [:]
+        return listConfigsWithSubdirectories().map { $0.url }
+    }
 
-        // First, add local configs (user-created or edited)
+    /// List all available config files with subdirectory information
+    func listConfigsWithSubdirectories() -> [ConfigFileInfo] {
+        var configsByKey: [String: ConfigFileInfo] = [:]  // key = "subdir/filename" or "filename"
+
+        // Helper to scan a directory and its subdirectories
+        func scanDirectory(_ dirURL: URL, subdirectory: String?) {
+            guard let contents = try? fileManager.contentsOfDirectory(
+                at: dirURL,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: .skipsHiddenFiles
+            ) else { return }
+
+            for item in contents {
+                let isDirectory = (try? item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+
+                if isDirectory {
+                    // Recursively scan subdirectory
+                    let subDirName = item.lastPathComponent
+                    scanDirectory(item, subdirectory: subDirName)
+                } else if item.pathExtension == "json" && item.lastPathComponent != "ConfigCategories.json" {
+                    // Add config file (skip ConfigCategories.json)
+                    let key = subdirectory.map { "\($0)/\(item.lastPathComponent)" } ?? item.lastPathComponent
+                    configsByKey[key] = ConfigFileInfo(url: item, subdirectory: subdirectory)
+                }
+            }
+        }
+
+        // First, scan local configs (user-created or edited)
         if let localConfigsURL = getConfigsURL() {
-            if let localFiles = try? fileManager.contentsOfDirectory(
-                at: localConfigsURL,
-                includingPropertiesForKeys: nil,
-                options: .skipsHiddenFiles
-            ) {
-                for file in localFiles where file.pathExtension == "json" {
-                    configsByName[file.lastPathComponent] = file
-                }
-            }
+            scanDirectory(localConfigsURL, subdirectory: nil)
         }
 
-        // Then, add/override with bundle configs (bundle takes precedence)
+        // Then, scan bundle configs (bundle takes precedence for same key)
         if let bundleConfigsURL = Bundle.main.url(forResource: configsDir, withExtension: nil) {
-            if let bundleFiles = try? fileManager.contentsOfDirectory(
-                at: bundleConfigsURL,
-                includingPropertiesForKeys: nil,
-                options: .skipsHiddenFiles
-            ) {
-                for file in bundleFiles where file.pathExtension == "json" {
-                    configsByName[file.lastPathComponent] = file
-                }
+            scanDirectory(bundleConfigsURL, subdirectory: nil)
+        }
+
+        return Array(configsByKey.values)
+    }
+
+    /// Get ConfigCategories.json from a subdirectory, if it exists
+    func getSubdirectoryCategoriesURL(subdirectory: String) -> URL? {
+        // Check bundle first
+        if let bundleConfigsURL = Bundle.main.url(forResource: configsDir, withExtension: nil) {
+            let categoriesURL = bundleConfigsURL
+                .appendingPathComponent(subdirectory)
+                .appendingPathComponent("ConfigCategories.json")
+            if fileManager.fileExists(atPath: categoriesURL.path) {
+                return categoriesURL
             }
         }
 
-        return Array(configsByName.values)
+        // Check local
+        if let localConfigsURL = getConfigsURL() {
+            let categoriesURL = localConfigsURL
+                .appendingPathComponent(subdirectory)
+                .appendingPathComponent("ConfigCategories.json")
+            if fileManager.fileExists(atPath: categoriesURL.path) {
+                return categoriesURL
+            }
+        }
+
+        return nil
     }
 
     /// Generate an "Edited" filename for saving modifications

@@ -13,27 +13,43 @@ class ConfigLoader {
     private var configCache: [String: SpiralConfig] = [:]
     private var jsonCache: [String: Data] = [:]
 
-    /// Load all available configurations from iCloud
-    func loadAllConfigs() -> [SpiralConfig] {
-        return loadAllConfigsWithURLs().map { $0.config }
+    /// Info about a loaded config including source URL and subdirectory
+    struct LoadedConfigInfo {
+        let config: SpiralConfig
+        let url: URL
+        let subdirectory: String?  // nil for root Configs directory
     }
 
-    /// Load all configurations with their source URLs
-    func loadAllConfigsWithURLs() -> [(config: SpiralConfig, url: URL)] {
-        let urls = iCloudResourceManager.shared.listConfigs()
+    /// Load all available configurations from iCloud
+    func loadAllConfigs() -> [SpiralConfig] {
+        return loadAllConfigsWithInfo().map { $0.config }
+    }
 
-        if urls.isEmpty {
-            print("Warning: No config files found in iCloud")
+    /// Load all configurations with their source URLs (legacy method for compatibility)
+    func loadAllConfigsWithURLs() -> [(config: SpiralConfig, url: URL)] {
+        return loadAllConfigsWithInfo().map { (config: $0.config, url: $0.url) }
+    }
+
+    /// Load all configurations with full info including subdirectory
+    func loadAllConfigsWithInfo() -> [LoadedConfigInfo] {
+        let fileInfos = iCloudResourceManager.shared.listConfigsWithSubdirectories()
+
+        if fileInfos.isEmpty {
+            print("Warning: No config files found")
             return []
         }
 
-        var results: [(config: SpiralConfig, url: URL)] = []
-        for url in urls {
+        var results: [LoadedConfigInfo] = []
+        for fileInfo in fileInfos {
             do {
-                let config = try loadConfig(from: url)
-                results.append((config: config, url: url))
+                let config = try loadConfig(from: fileInfo.url)
+                results.append(LoadedConfigInfo(
+                    config: config,
+                    url: fileInfo.url,
+                    subdirectory: fileInfo.subdirectory
+                ))
             } catch {
-                print("Warning: Failed to load config from \(url.lastPathComponent): \(error)")
+                print("Warning: Failed to load config from \(fileInfo.url.lastPathComponent): \(error)")
             }
         }
 

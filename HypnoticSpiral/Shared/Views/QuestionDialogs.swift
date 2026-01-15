@@ -21,6 +21,8 @@ struct PromptDialog: View {
             Text(message)
                 .font(.title2)
                 .multilineTextAlignment(.center)
+                .foregroundColor(.black)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding()
 
             Button("OK") {
@@ -30,7 +32,8 @@ struct PromptDialog: View {
             .buttonStyle(.borderedProminent)
         }
         .padding(40)
-        .background(Color(white: 0.1))
+        .frame(maxWidth: 500)
+        .background(Color(white: 0.7))
         .cornerRadius(12)
         .shadow(radius: 20)
     }
@@ -50,6 +53,7 @@ struct OpenQuestionDialog: View {
             Text(prompt)
                 .font(.title2)
                 .multilineTextAlignment(.center)
+                .foregroundColor(.black)
                 .padding()
 
             TextField("Your answer", text: $answer)
@@ -68,7 +72,7 @@ struct OpenQuestionDialog: View {
             .disabled(answer.isEmpty)
         }
         .padding(40)
-        .background(Color(white: 0.1))
+        .background(Color(white: 0.7))
         .cornerRadius(12)
         .shadow(radius: 20)
         .onAppear {
@@ -94,6 +98,7 @@ struct YesNoQuestionDialog: View {
             Text(question)
                 .font(.title2)
                 .multilineTextAlignment(.center)
+                .foregroundColor(.black)
                 .padding()
 
             HStack(spacing: 20) {
@@ -112,7 +117,7 @@ struct YesNoQuestionDialog: View {
             }
         }
         .padding(40)
-        .background(Color(white: 0.1))
+        .background(Color(white: 0.7))
         .cornerRadius(12)
         .shadow(radius: 20)
     }
@@ -150,7 +155,7 @@ struct ChallengeDialog: View {
             .buttonStyle(.borderedProminent)
         }
         .padding(40)
-        .background(Color(white: 0.1))
+        .background(Color(white: 0.7))
         .cornerRadius(12)
         .shadow(radius: 20)
         .onAppear {
@@ -178,10 +183,11 @@ struct SetPrefDialog: View {
                 Text(prompt)
                     .font(.title2)
                     .multilineTextAlignment(.center)
+                    .foregroundColor(.black)
 
                 Text("(This will be saved for future sessions)")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.gray)
             }
             .padding()
 
@@ -201,7 +207,7 @@ struct SetPrefDialog: View {
             .disabled(answer.isEmpty)
         }
         .padding(40)
-        .background(Color(white: 0.1))
+        .background(Color(white: 0.7))
         .cornerRadius(12)
         .shadow(radius: 20)
         .onAppear {
@@ -277,12 +283,12 @@ struct MantraDialog: View {
             // Instruction
             Text(isListening ? "Speak now:" : (autoStartMic ? "Speak or type:" : "Type below:"))
                 .font(.caption)
-                .foregroundColor(isListening ? .green : .secondary)
+                .foregroundColor(isListening ? .green : .gray)
 
             // Expected text (what user must type/say)
             Text(expectedText)
                 .font(.system(size: 28, weight: .bold))
-                .foregroundColor(.white)
+                .foregroundColor(.black)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
 
@@ -317,7 +323,7 @@ struct MantraDialog: View {
                             .frame(width: 44, height: 44)
                             .background(
                                 Circle()
-                                    .fill(isListening ? Color.green.opacity(0.3) : Color.white.opacity(0.1))
+                                    .fill(isListening ? Color.green.opacity(0.3) : Color.gray.opacity(0.15))
                             )
                             .overlay(
                                 // Pulsing ring when listening
@@ -340,13 +346,13 @@ struct MantraDialog: View {
             if !recognizedText.isEmpty {
                 Text("\"\(recognizedText)\"")
                     .font(.system(size: 18, weight: .medium))
-                    .foregroundColor(spokenMatches ? .green : .white.opacity(0.8))
+                    .foregroundColor(spokenMatches ? .green : .black.opacity(0.7))
                     .multilineTextAlignment(.center)
                     .padding(.horizontal)
                     .padding(.vertical, 8)
                     .background(
                         RoundedRectangle(cornerRadius: 8)
-                            .fill(spokenMatches ? Color.green.opacity(0.2) : Color.white.opacity(0.1))
+                            .fill(spokenMatches ? Color.green.opacity(0.2) : Color.gray.opacity(0.1))
                     )
             } else if isListening {
                 // Subtle listening indicator when no text yet
@@ -386,7 +392,7 @@ struct MantraDialog: View {
             .disabled(!inputMatches && !spokenMatches)
         }
         .padding(40)
-        .background(Color(white: 0.1).opacity(0.95))
+        .background(Color(white: 0.7))
         .cornerRadius(12)
         .shadow(radius: 20)
         .animation(.easeInOut(duration: 0.2), value: inputMatches)
