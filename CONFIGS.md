@@ -343,6 +343,19 @@ Like `!mantra()` but microphone auto-starts for voice recognition.
 "!speak_mantra('I obey', 30, 'self.retrain')"
 ```
 
+#### `!awareness_test('message', timeout, 'jumpTarget')`
+Peripheral awareness test. Shows a subtle, low-opacity prompt at the bottom of the screen. A user staring at the spiral center won't notice it. If they don't click within the timeout, jumps to the specified script (indicating they're deep in trance).
+
+- `message`: Text to display (e.g., "Click if you see this")
+- `timeout`: Seconds before timeout (integer)
+- `jumpTarget`: Script to jump to on timeout (e.g., `'self.deep_section'`)
+
+The test appears without the dark overlay, so the spiral remains fully visible and mesmerizing. The prompt fades in gently with very low opacity to avoid catching peripheral attention.
+
+```json
+"!awareness_test('Click if awake', 15, 'self.deep_trance')"
+```
+
 ### Conditional Command
 
 #### `!cond('condition', thenWords, elseWords)`

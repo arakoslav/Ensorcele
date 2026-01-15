@@ -268,8 +268,13 @@ struct SpiralView: View {
 
                 // Question dialogs (modal overlays) - light dim to keep spiral visible
                 if let question = state.currentQuestion {
-                    Color.black.opacity(0.4)
-                        .ignoresSafeArea()
+                    // Awareness test has no overlay - user should keep staring at spiral
+                    if case .awarenessTest = question {
+                        // No overlay
+                    } else {
+                        Color.black.opacity(0.4)
+                            .ignoresSafeArea()
+                    }
 
                     switch question {
                     case .prompt(let message, let completion):
@@ -289,6 +294,9 @@ struct SpiralView: View {
 
                     case .mantra(let expectedText, let timeoutSeconds, let autoStartMic, let onComplete, let onTimeout):
                         MantraDialog(expectedText: expectedText, timeoutSeconds: timeoutSeconds, autoStartMic: autoStartMic, onComplete: onComplete, onTimeout: onTimeout)
+
+                    case .awarenessTest(let message, let timeoutSeconds, let onDismiss, let onTimeout):
+                        AwarenessTestDialog(message: message, timeoutSeconds: timeoutSeconds, onDismiss: onDismiss, onTimeout: onTimeout)
                     }
                 }
             }

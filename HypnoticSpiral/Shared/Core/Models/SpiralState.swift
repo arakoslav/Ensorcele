@@ -100,6 +100,9 @@ class SpiralState: ObservableObject {
         case challenge(prompt: String, variableName: String, completion: (String) -> Void)
         case setPref(prompt: String, variableName: String, completion: (String) -> Void)
         case mantra(expectedText: String, timeoutSeconds: Int?, autoStartMic: Bool, onComplete: () -> Void, onTimeout: (() -> Void)?)
+        /// Peripheral awareness test - appears at bottom of screen, user must click to dismiss
+        /// If timeout expires without click, onTimeout is called (typically jumps to deeper script)
+        case awarenessTest(message: String, timeoutSeconds: Int, onDismiss: () -> Void, onTimeout: () -> Void)
     }
 
     // MARK: - Helper Methods

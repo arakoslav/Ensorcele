@@ -40,7 +40,7 @@ class SpiralEngine: ObservableObject {
     /// Commands that require user interaction and should stop pre-buffering
     private let interactiveCommands: Set<String> = [
         "prompt", "short_prompt", "open_question", "yn_question", "question_yn",
-        "challenge", "set_pref", "mantra", "speak_mantra", "quit"
+        "challenge", "set_pref", "mantra", "speak_mantra", "awareness_test", "quit"
     ]
 
     // Time-based spiral rotation
@@ -802,6 +802,18 @@ class SpiralEngine: ObservableObject {
                 )
             }
 
+        case "awareness_test":
+            // Peripheral awareness test - subtle prompt at bottom of screen
+            // User staring at spiral center won't notice it
+            // Syntax: !awareness_test('Click if awake', 10, 'self.deep_trance')
+            // If not clicked within timeout, jumps to specified script
+            if let args = extractArgs(from: trimmed), args.count >= 3 {
+                let message = await performVariableSubstitution(args[0])
+                let timeoutSeconds = Int(args[1]) ?? 10
+                let jumpTarget = args[2].replacingOccurrences(of: "self.", with: "")
+                await showAwarenessTest(message: message, timeoutSeconds: timeoutSeconds, jumpTarget: jumpTarget)
+            }
+
         case "cond":
             // Syntax: !cond('condition', ['word1', 'word2'], ['else1', 'else2'])
             // With one array: show words if condition is FALSE (guard pattern)
@@ -1308,6 +1320,39 @@ class SpiralEngine: ObservableObject {
                     continuation.resume()
                 },
                 onTimeout: onTimeout
+            )
+            state.isWaiting = true
+        }
+    }
+
+    /// Show peripheral awareness test at bottom of screen
+    /// If user doesn't click within timeout, jumps to specified script
+    private func showAwarenessTest(message: String, timeoutSeconds: Int, jumpTarget: String) async {
+        await withCheckedContinuation { continuation in
+            state.currentQuestion = .awarenessTest(
+                message: message,
+                timeoutSeconds: timeoutSeconds,
+                onDismiss: {
+                    // User clicked - they're still aware
+                    self.state.currentQuestion = nil
+                    self.state.isWaiting = false
+                    continuation.resume()
+                },
+                onTimeout: {
+                    // User didn't notice - they're deep in trance
+                    self.state.currentQuestion = nil
+                    self.state.isWaiting = false
+
+                    // Jump to the specified script
+                    do {
+                        try self.loadScript(named: jumpTarget)
+                        print("Awareness test timeout: jumped to script '\(jumpTarget)'")
+                    } catch {
+                        print("Error jumping to awareness test script '\(jumpTarget)': \(error)")
+                    }
+
+                    continuation.resume()
+                }
             )
             state.isWaiting = true
         }

@@ -627,6 +627,74 @@ struct MantraDialog: View {
     }
 }
 
+/// Peripheral awareness test - appears at bottom of screen
+/// User staring at spiral center won't notice it
+/// If not clicked within timeout, triggers onTimeout (typically jumps to deeper script)
+struct AwarenessTestDialog: View {
+    let message: String
+    let timeoutSeconds: Int
+    let onDismiss: () -> Void
+    let onTimeout: () -> Void
+
+    @State private var remainingSeconds: Int = 0
+    @State private var timer: Timer?
+    @State private var opacity: Double = 0.0
+
+    var body: some View {
+        VStack {
+            Spacer()
+
+            // Subtle button at bottom of screen
+            Button {
+                stopTimer()
+                onDismiss()
+            } label: {
+                Text(message)
+                    .font(.system(size: 14, weight: .light))
+                    .foregroundColor(.white.opacity(0.6))
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(
+                        Capsule()
+                            .fill(Color.white.opacity(0.1))
+                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.plain)
+            .opacity(opacity)
+            .padding(.bottom, 40)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            startTimer()
+            // Fade in gently
+            withAnimation(.easeIn(duration: 1.0)) {
+                opacity = 1.0
+            }
+        }
+        .onDisappear {
+            stopTimer()
+        }
+    }
+
+    private func startTimer() {
+        remainingSeconds = timeoutSeconds
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            if remainingSeconds > 1 {
+                remainingSeconds -= 1
+            } else {
+                stopTimer()
+                onTimeout()
+            }
+        }
+    }
+
+    private func stopTimer() {
+        timer?.invalidate()
+        timer = nil
+    }
+}
+
 /// Coordinator class to act as SpeechRecognizerDelegate
 @MainActor
 private class SpeechCoordinator: SpeechRecognizerDelegate {
