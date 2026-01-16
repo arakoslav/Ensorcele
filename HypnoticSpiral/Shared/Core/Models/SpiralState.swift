@@ -54,11 +54,42 @@ class SpiralState: ObservableObject {
 
     var variables: [String: String] = [:]
 
+    // MARK: - Runtime Property Overrides
+    // These override config properties when set via !set_property()
+
+    var runtimeImageAlpha: Int? = nil
+    var runtimeTextAlpha: Int? = nil
+    var runtimeSpiralAlpha: Int? = nil
+    var runtimeSubliminalAlpha: Int? = nil
+
+    /// Get effective image alpha (runtime override or config default)
+    func getEffectiveImageAlpha() -> Int {
+        return runtimeImageAlpha ?? config?.properties.imageAlpha ?? 255
+    }
+
+    /// Get effective text alpha (runtime override or config default)
+    func getEffectiveTextAlpha() -> Int {
+        return runtimeTextAlpha ?? config?.properties.textAlpha ?? 254
+    }
+
+    /// Get effective spiral alpha (runtime override or config default)
+    func getEffectiveSpiralAlpha() -> Int {
+        return runtimeSpiralAlpha ?? config?.properties.alpha ?? 127
+    }
+
+    /// Get effective subliminal alpha (runtime override or config default)
+    func getEffectiveSubliminalAlpha() -> Int? {
+        return runtimeSubliminalAlpha ?? config?.properties.subliminalAlpha
+    }
+
     // MARK: - Loaded Resources
 
     var textSequence: [String] = []
     var spiralImage: CGImage? = nil  // Single base spiral image
     var counterSpiralImage: CGImage? = nil  // Counter-rotating spiral for twist type
+    var spiralFrames: [CGImage] = []  // Multiple frames for animated types (e.g., expanding rings)
+    @Published var ringsFrameIndex: Int = 0  // Current frame for rings animation (legacy)
+    @Published var ringsPhase: Double = 0.0  // Continuous phase for Canvas-based ring expansion (0 to spacing)
     @Published var spiralRotation: Double = 0.0  // Current rotation angle in degrees
     @Published var counterSpiralRotation: Double = 0.0  // Counter rotation (opposite direction)
     @Published var spiralScale: Double = 1.0  // Pulsing scale effect
@@ -143,6 +174,12 @@ class SpiralState: ObservableObject {
         variables = [:]
         textSequence = []
         currentQuestion = nil
+
+        // Runtime property overrides
+        runtimeImageAlpha = nil
+        runtimeTextAlpha = nil
+        runtimeSpiralAlpha = nil
+        runtimeSubliminalAlpha = nil
 
         // Camera state
         lastCapturedImage = nil

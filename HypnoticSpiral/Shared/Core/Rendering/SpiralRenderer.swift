@@ -48,16 +48,21 @@ class SpiralRenderer {
         return generateSpiralByType(config: config, size: size, spiralType: effectiveType)
     }
 
-    /// Generate a counter-rotating spiral layer (for twist type)
-    /// Returns nil if not a twist spiral
+    /// Generate a counter-rotating spiral layer (for twist and rings types)
+    /// Returns nil if type doesn't support counter-rotation
     static func generateCounterSpiral(config: SpiralConfig, size: CGSize, spiralType: SpiralType? = nil) -> CGImage? {
         let effectiveType = spiralType ?? config.properties.spiralType
-        guard effectiveType == .twist else {
+
+        switch effectiveType {
+        case .twist:
+            // Generate thin white line spiral for counter-rotation
+            return generateTwistCounterSpiral(config: config, size: size)
+        case .colors:
+            // Generate counter-rotating spoke layer for colors
+            return generateColorsCounterSpiral(config: config, size: size)
+        default:
             return nil
         }
-
-        // Generate thin white line spiral for counter-rotation
-        return generateTwistCounterSpiral(config: config, size: size)
     }
 
     // MARK: - Spiral Type Dispatcher
@@ -73,12 +78,15 @@ class SpiralRenderer {
         case .twist:
             // For twist, the primary layer is a filled purple spiral
             return generateTwistPrimarySpiral(config: config, size: size)
-        case .nimja:
-            // Nimja-style curved wedge spiral
-            return generateNimjaSpiral(config: config, size: size)
         case .chromatic:
             // Shader-style spiral with chromatic aberration
             return generateChromaticSpiral(config: config, size: size)
+        case .colors:
+            // Color-shifting bands flowing outward (formerly "rings")
+            return generateColorsSpiral(config: config, size: size)
+        case .rings:
+            // Concentric rings expanding from center with optional texture
+            return generateExpandingRingsSpiral(config: config, size: size)
         }
     }
 
@@ -509,119 +517,6 @@ class SpiralRenderer {
         return context.makeImage()
     }
 
-    // MARK: - Nimja Spiral (Curved Wedge Sectors)
-    // Classic hypno.nimja.com style: curved wedges that create strong "pulling in" effect
-
-    private static func generateNimjaSpiral(config: SpiralConfig, size: CGSize) -> CGImage? {
-        let diagonal = sqrt(size.width * size.width + size.height * size.height)
-        let spiralSize = CGSize(width: diagonal, height: diagonal)
-
-        let width = Int(spiralSize.width)
-        let height = Int(spiralSize.height)
-
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
-
-        guard let context = CGContext(
-            data: nil,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: width * 4,
-            space: colorSpace,
-            bitmapInfo: bitmapInfo.rawValue
-        ) else {
-            print("Failed to create CGContext for nimja spiral")
-            return nil
-        }
-
-        context.setAllowsAntialiasing(true)
-        context.setShouldAntialias(true)
-
-        // Black background
-        context.setFillColor(red: 0, green: 0, blue: 0, alpha: 1.0)
-        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
-
-        let centerX = spiralSize.width / 2.0
-        let centerY = spiralSize.height / 2.0
-        let center = CGPoint(x: centerX, y: centerY)
-
-        // Primary color from config, secondary is white
-        let r1 = Double(config.properties.color[0]) / 255.0
-        let g1 = Double(config.properties.color[1]) / 255.0
-        let b1 = Double(config.properties.color[2]) / 255.0
-
-        // Fill color for alternating sectors (default white)
-        let fillColor = config.properties.spiralFillColor ?? [255, 255, 255]
-        let r2 = Double(fillColor[0]) / 255.0
-        let g2 = Double(fillColor[1]) / 255.0
-        let b2 = Double(fillColor[2]) / 255.0
-
-        let arms = config.properties.spiralArms
-        let tightness = config.properties.spiralTightness
-        let maxRadius = diagonal / 2
-
-        // Nimja spiral uses radial sectors that twist as they extend outward
-        // The key is that each sector boundary follows an Archimedean spiral
-        // r = a + b*θ, creating a constant-spacing effect
-
-        let numSectors = arms * 2  // Double for alternating colors
-        let sectorAngle = 2.0 * .pi / Double(numSectors)
-
-        // How much each sector twists as it goes outward
-        let twistFactor = tightness * 10.0  // Amplify tightness for visible twist
-
-        // Number of radial steps for smooth curves
-        let radialSteps = 100
-        let radiusStep = maxRadius / Double(radialSteps)
-
-        // Draw each sector as a series of small trapezoids from center outward
-        for sector in 0..<numSectors {
-            // Alternating colors
-            let isEven = sector % 2 == 0
-            if isEven {
-                context.setFillColor(red: r1, green: g1, blue: b1, alpha: 1.0)
-            } else {
-                context.setFillColor(red: r2, green: g2, blue: b2, alpha: 1.0)
-            }
-
-            let baseAngle = Double(sector) * sectorAngle
-
-            // Build the sector path from center to edge
-            let path = CGMutablePath()
-            path.move(to: center)
-
-            // Trace outward along the leading edge (with twist)
-            for step in 0...radialSteps {
-                let radius = Double(step) * radiusStep
-                // The twist increases with radius
-                let twist = (radius / maxRadius) * twistFactor
-                let angle = baseAngle + twist
-
-                let x = radius * cos(angle) + centerX
-                let y = radius * sin(angle) + centerY
-                path.addLine(to: CGPoint(x: x, y: y))
-            }
-
-            // Trace back inward along the trailing edge (with twist)
-            for step in stride(from: radialSteps, through: 0, by: -1) {
-                let radius = Double(step) * radiusStep
-                let twist = (radius / maxRadius) * twistFactor
-                let angle = baseAngle + sectorAngle + twist
-
-                let x = radius * cos(angle) + centerX
-                let y = radius * sin(angle) + centerY
-                path.addLine(to: CGPoint(x: x, y: y))
-            }
-
-            path.closeSubpath()
-            context.addPath(path)
-            context.fillPath()
-        }
-
-        return context.makeImage()
-    }
-
     // MARK: - Chromatic Spiral (Shader-style with RGB aberration)
     // Based on hypno.nimja.com/visual/131 - sine wave pattern with chromatic aberration
 
@@ -707,6 +602,400 @@ class SpiralRenderer {
         }
 
         return context.makeImage()
+    }
+
+    // MARK: - Colors Spiral (Concentric flowing color bands)
+    // Color-shifting bands with irregular texture, colors blending and shifting outward
+    // Optional spoked wheel texture with wheels rotating in different directions
+
+    private static func generateColorsSpiral(config: SpiralConfig, size: CGSize) -> CGImage? {
+        let diagonal = sqrt(size.width * size.width + size.height * size.height)
+        let spiralSize = CGSize(width: diagonal, height: diagonal)
+
+        let width = Int(spiralSize.width)
+        let height = Int(spiralSize.height)
+
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo.rawValue
+        ) else {
+            print("Failed to create CGContext for colors spiral")
+            return nil
+        }
+
+        guard let data = context.data else {
+            print("Failed to get pixel data for colors spiral")
+            return nil
+        }
+
+        let pixels = data.bindMemory(to: UInt8.self, capacity: width * height * 4)
+
+        let centerX = Double(width) / 2.0
+        let centerY = Double(height) / 2.0
+        let maxDist = diagonal / 2.0
+
+        // Configuration parameters
+        let bandCount = Double(config.properties.colorsBandCount)
+        let spokeCount = config.properties.colorsSpokes
+        let expansionRate = config.properties.colorsExpansionRate
+
+        // Use a seeded random for consistent "irregular" texture
+        // The irregularity comes from varying band widths
+        var bandPhases: [Double] = []
+        var bandWidths: [Double] = []
+        for i in 0..<Int(bandCount) {
+            // Pseudo-random based on band index for reproducibility
+            let phase = sin(Double(i) * 2.7183) * 0.5 + 0.5
+            bandPhases.append(phase)
+            // Width varies - inner rings narrower, outer rings broader (until they meet)
+            let baseWidth = 1.0 / bandCount
+            let widthVariation = 0.3 + 0.7 * (Double(i) / bandCount)  // 30% to 100%
+            bandWidths.append(baseWidth * widthVariation)
+        }
+
+        // Normalize band widths so they sum to 1.0
+        let totalWidth = bandWidths.reduce(0, +)
+        bandWidths = bandWidths.map { $0 / totalWidth }
+
+        // Calculate cumulative positions for bands
+        var bandPositions: [Double] = [0.0]
+        for width in bandWidths {
+            bandPositions.append(bandPositions.last! + width)
+        }
+
+        // Process each pixel
+        for y in 0..<height {
+            for x in 0..<width {
+                let px = Double(x) - centerX
+                let py = Double(y) - centerY
+
+                // Polar coordinates
+                let dist = sqrt(px * px + py * py)
+                let normalizedDist = dist / maxDist
+                let angle = atan2(py, px)
+
+                // Add spiral twist to distance for "flowing" effect when rotated
+                // This makes colors appear to flow outward during rotation
+                let spiralTwist = angle * expansionRate / (2.0 * .pi)
+                let flowDist = (normalizedDist + spiralTwist).truncatingRemainder(dividingBy: 1.0)
+                let effectiveDist = flowDist < 0 ? flowDist + 1.0 : flowDist
+
+                // Determine which band this pixel falls in
+                var bandIndex = 0
+                for i in 0..<Int(bandCount) {
+                    if effectiveDist >= bandPositions[i] && effectiveDist < bandPositions[i + 1] {
+                        bandIndex = i
+                        break
+                    }
+                }
+
+                // Position within the band (0 to 1)
+                let bandStart = bandPositions[bandIndex]
+                let bandEnd = bandPositions[bandIndex + 1]
+                let posInBand = (effectiveDist - bandStart) / (bandEnd - bandStart)
+
+                // Calculate hue - shifts through spectrum based on band + position
+                // Each band has a different base hue, creating color diversity
+                let baseHue = Double(bandIndex) / bandCount
+                let hueShift = posInBand * 0.1  // Subtle shift within band
+                let hue = (baseHue + hueShift + bandPhases[bandIndex] * 0.2).truncatingRemainder(dividingBy: 1.0)
+
+                // Saturation varies for texture - stronger at band centers
+                let distFromBandCenter = abs(posInBand - 0.5) * 2.0
+                let saturation = 0.7 + 0.3 * (1.0 - distFromBandCenter)
+
+                // Value/brightness - creates the ring definition
+                // Darker at band edges for definition, brighter at centers
+                let edgeFade = 1.0 - pow(distFromBandCenter, 2.0) * 0.4
+                var value = edgeFade
+
+                // Add irregular "pulse" texture based on angle and band
+                let pulseFreq = 3.0 + Double(bandIndex) * 0.5
+                let pulse = sin(angle * pulseFreq + bandPhases[bandIndex] * 10.0) * 0.1 + 0.9
+                value *= pulse
+
+                // Optional spokes - create radial wheel texture
+                if spokeCount > 0 {
+                    // Different bands have spokes at different rotation offsets
+                    // This creates the "wheels rotating different directions" effect
+                    let spokeOffset = bandPhases[bandIndex] * 2.0 * .pi
+                    let effectiveAngle = angle + spokeOffset
+
+                    // Calculate spoke intensity
+                    let spokeAngle = effectiveAngle * Double(spokeCount) / 2.0
+                    let spokeIntensity = pow(cos(spokeAngle), 2.0)
+
+                    // Blend spoke pattern - stronger in middle bands for layered effect
+                    let bandCenteredness = 1.0 - abs(Double(bandIndex) - bandCount / 2.0) / (bandCount / 2.0)
+                    let spokeBlend = 0.3 * bandCenteredness
+
+                    value = value * (1.0 - spokeBlend) + spokeIntensity * spokeBlend
+                }
+
+                // Convert HSV to RGB
+                let (r, g, b) = hsvToRgb(h: hue, s: saturation, v: value)
+
+                // Write RGBA
+                let offset = (y * width + x) * 4
+                pixels[offset] = UInt8(max(0, min(255, r * 255)))
+                pixels[offset + 1] = UInt8(max(0, min(255, g * 255)))
+                pixels[offset + 2] = UInt8(max(0, min(255, b * 255)))
+                pixels[offset + 3] = 255
+            }
+        }
+
+        return context.makeImage()
+    }
+
+    /// Generate a counter-rotating spoke layer for colors (when spokes are enabled)
+    /// This creates "wheels rotating in different directions" effect
+    static func generateColorsCounterSpiral(config: SpiralConfig, size: CGSize) -> CGImage? {
+        let spokeCount = config.properties.colorsSpokes
+        guard spokeCount > 0 else { return nil }
+
+        let diagonal = sqrt(size.width * size.width + size.height * size.height)
+        let spiralSize = CGSize(width: diagonal, height: diagonal)
+
+        let width = Int(spiralSize.width)
+        let height = Int(spiralSize.height)
+
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo.rawValue
+        ) else {
+            return nil
+        }
+
+        guard let data = context.data else { return nil }
+
+        let pixels = data.bindMemory(to: UInt8.self, capacity: width * height * 4)
+
+        let centerX = Double(width) / 2.0
+        let centerY = Double(height) / 2.0
+        let maxDist = diagonal / 2.0
+        let bandCount = Double(config.properties.colorsBandCount)
+
+        // Generate an alternating spoke pattern for counter-rotation layer
+        for y in 0..<height {
+            for x in 0..<width {
+                let px = Double(x) - centerX
+                let py = Double(y) - centerY
+
+                let dist = sqrt(px * px + py * py)
+                let normalizedDist = dist / maxDist
+                let angle = atan2(py, px)
+
+                // Determine which band region (outer half only for counter-rotation)
+                let bandIndex = Int(normalizedDist * bandCount)
+                let isOuterHalf = bandIndex > Int(bandCount) / 2
+
+                // Only draw spokes in outer region for this counter layer
+                guard isOuterHalf else {
+                    let offset = (y * width + x) * 4
+                    pixels[offset] = 0
+                    pixels[offset + 1] = 0
+                    pixels[offset + 2] = 0
+                    pixels[offset + 3] = 0
+                    continue
+                }
+
+                // Spoke pattern
+                let spokeAngle = angle * Double(spokeCount) / 2.0
+                let spokeIntensity = pow(cos(spokeAngle), 4.0)
+
+                // Fade in from middle to edge
+                let fadeFactor = (normalizedDist - 0.5) * 2.0
+
+                let alpha = UInt8(spokeIntensity * fadeFactor * 180)
+
+                let offset = (y * width + x) * 4
+                pixels[offset] = 255
+                pixels[offset + 1] = 255
+                pixels[offset + 2] = 255
+                pixels[offset + 3] = alpha
+            }
+        }
+
+        return context.makeImage()
+    }
+
+    // MARK: - Expanding Rings (True concentric circles)
+    // Actual circles expanding from center - NOT a spiral
+    // Texture shows rotation when image spins, rings stay as circles
+    // Generate multiple frames for smooth expansion animation
+
+    /// Generate all frames for expanding rings animation
+    static func generateRingsFrames(config: SpiralConfig, size: CGSize, frameCount: Int = 30) -> [CGImage] {
+        var frames: [CGImage] = []
+        let spacing = config.properties.ringsSpacing
+
+        for i in 0..<frameCount {
+            // Phase goes from 0 to spacing over all frames
+            let phase = spacing * Double(i) / Double(frameCount)
+            if let frame = generateExpandingRingsFrame(config: config, size: size, phaseOffset: phase) {
+                frames.append(frame)
+            }
+        }
+
+        return frames
+    }
+
+    /// Generate a single frame of the rings animation (called by dispatcher for preview)
+    private static func generateExpandingRingsSpiral(config: SpiralConfig, size: CGSize) -> CGImage? {
+        return generateExpandingRingsFrame(config: config, size: size, phaseOffset: 0)
+    }
+
+    /// Generate a single frame with rings at a specific phase offset
+    private static func generateExpandingRingsFrame(config: SpiralConfig, size: CGSize, phaseOffset: Double) -> CGImage? {
+        let diagonal = sqrt(size.width * size.width + size.height * size.height)
+        let spiralSize = CGSize(width: diagonal, height: diagonal)
+
+        let width = Int(spiralSize.width)
+        let height = Int(spiralSize.height)
+
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo.rawValue
+        ) else {
+            print("Failed to create CGContext for expanding rings")
+            return nil
+        }
+
+        guard let data = context.data else {
+            print("Failed to get pixel data for expanding rings")
+            return nil
+        }
+
+        let pixels = data.bindMemory(to: UInt8.self, capacity: width * height * 4)
+
+        let centerX = Double(width) / 2.0
+        let centerY = Double(height) / 2.0
+
+        // Configuration parameters
+        let lineWidth = config.properties.ringsLineWidth
+        let spacing = config.properties.ringsSpacing
+        let pulseWave = config.properties.ringsPulseWave
+        let textured = config.properties.ringsTextured
+
+        // Ring color from config
+        let r = Double(config.properties.color[0]) / 255.0
+        let g = Double(config.properties.color[1]) / 255.0
+        let b = Double(config.properties.color[2]) / 255.0
+
+        // Process each pixel
+        for y in 0..<height {
+            for x in 0..<width {
+                let px = Double(x) - centerX
+                let py = Double(y) - centerY
+
+                // Pure distance from center - no angle component for ring position
+                // This keeps rings as true circles
+                let dist = sqrt(px * px + py * py)
+                let angle = atan2(py, px)
+
+                // Apply phase offset for expansion animation
+                // Subtracting phase makes rings appear to move outward as phase increases
+                // (a ring at distance d in frame 0 appears at distance d+phase in frame n)
+                let effectiveDist = dist - phaseOffset
+
+                // Calculate spacing with optional pulse wave (denser ring areas)
+                var currentSpacing = spacing
+                if pulseWave > 0 {
+                    // Create waves of denser rings that pulse outward
+                    let pulsePhase = effectiveDist / (spacing * 5.0)
+                    let pulseFactor = 1.0 - pulseWave * 0.5 * (sin(pulsePhase * 2.0 * .pi) + 1.0) / 2.0
+                    currentSpacing = spacing * max(0.3, pulseFactor)
+                }
+
+                // Distance to nearest ring center (true circles)
+                // Use effectiveDist for ring position calculation
+                var ringPhase = effectiveDist.truncatingRemainder(dividingBy: currentSpacing)
+                if ringPhase < 0 { ringPhase += currentSpacing }  // Handle negative values near center
+                let distToRingCenter = min(ringPhase, currentSpacing - ringPhase)
+
+                // Which ring number is this?
+                let ringNum = Int(max(0, effectiveDist) / currentSpacing)
+
+                // Ring intensity based on distance to ring center
+                var intensity: Double = 0.0
+                if distToRingCenter < lineWidth / 2.0 {
+                    // Inside the ring line - soft edges
+                    let edgeDist = distToRingCenter / (lineWidth / 2.0)
+                    intensity = 1.0 - edgeDist * edgeDist
+                }
+
+                // Add radial texture if enabled - this shows rotation when image spins
+                // Without texture, spinning just looks like zooming
+                if textured && intensity > 0 {
+                    // Different texture frequency for each ring creates depth
+                    let textureFreq = 12.0 + Double(ringNum % 3) * 6.0
+                    // Phase offset per ring makes them appear to spin at different rates
+                    let texturePhase = Double(ringNum) * 1.2
+                    // Radial modulation - varies brightness around the ring
+                    let texture = 0.5 + 0.5 * cos(angle * textureFreq + texturePhase)
+
+                    intensity *= texture
+                }
+
+                // Write RGBA (clamp all values to valid UInt8 range)
+                let offset = (y * width + x) * 4
+                let clampedIntensity = max(0.0, min(1.0, intensity))
+                pixels[offset] = UInt8(r * clampedIntensity * 255)
+                pixels[offset + 1] = UInt8(g * clampedIntensity * 255)
+                pixels[offset + 2] = UInt8(b * clampedIntensity * 255)
+                pixels[offset + 3] = UInt8(clampedIntensity * 255)
+            }
+        }
+
+        return context.makeImage()
+    }
+
+    /// Convert HSV to RGB (h, s, v all in 0-1 range)
+    private static func hsvToRgb(h: Double, s: Double, v: Double) -> (Double, Double, Double) {
+        if s == 0 {
+            return (v, v, v)
+        }
+
+        let h6 = h * 6.0
+        let i = Int(h6)
+        let f = h6 - Double(i)
+        let p = v * (1.0 - s)
+        let q = v * (1.0 - s * f)
+        let t = v * (1.0 - s * (1.0 - f))
+
+        switch i % 6 {
+        case 0: return (v, t, p)
+        case 1: return (q, v, p)
+        case 2: return (p, v, t)
+        case 3: return (p, q, v)
+        case 4: return (t, p, v)
+        case 5: return (v, p, q)
+        default: return (v, v, v)
+        }
     }
 
     // MARK: - Image Loading

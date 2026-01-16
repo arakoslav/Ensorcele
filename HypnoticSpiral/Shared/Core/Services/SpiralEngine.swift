@@ -258,7 +258,7 @@ class SpiralEngine: ObservableObject {
 
         // Update spiral rotation using time-based angle (smooth, GPU-accelerated)
         // This continues even when waiting for user input (dialogs)
-        if state.drawSpiral && state.spiralImage != nil {
+        if state.drawSpiral && (state.spiralImage != nil || state.activeSpiralType == .rings) {
             let elapsed = now - spiralStartTime
             // spiralRotationRate is in degrees per second
             state.spiralRotation = -elapsed * spiralRotationRate
@@ -284,6 +284,15 @@ class SpiralEngine: ObservableObject {
                 let counterWobbleFreq = 0.23  // Different frequency
                 state.counterSpiralTiltX = wobbleAmplitude * sin(elapsed * counterWobbleFreq * 2.3 * .pi + 1.2)
                 state.counterSpiralTiltY = wobbleAmplitude * cos(elapsed * counterWobbleFreq * 1.9 * .pi + 0.8)
+            }
+
+            // Animate ringsPhase for Canvas-based ring expansion
+            // Phase increases continuously (no wrapping) - rings expand outward forever
+            if state.activeSpiralType == .rings {
+                let spacing = config.properties.ringsSpacing
+                let expansionRate = config.properties.ringsExpansionRate
+                let phaseSpeed = spacing * expansionRate  // pixels per second
+                state.ringsPhase = elapsed * phaseSpeed  // No wrapping - continuous expansion
             }
         }
 
@@ -814,6 +823,60 @@ class SpiralEngine: ObservableObject {
                 await showAwarenessTest(message: message, timeoutSeconds: timeoutSeconds, jumpTarget: jumpTarget)
             }
 
+        case "set_property":
+            // Dynamically set a runtime property value
+            // Syntax: !set_property('property_name', value)
+            // Supported: image_alpha, text_alpha, spiral_alpha, subliminal_alpha
+            if let args = extractArgs(from: trimmed), args.count >= 2 {
+                let propertyName = args[0]
+                let valueStr = args[1]
+
+                switch propertyName {
+                case "image_alpha":
+                    if let value = Int(valueStr) {
+                        state.runtimeImageAlpha = max(0, min(255, value))
+                        print("Set image_alpha to \(value)")
+                    }
+                case "text_alpha":
+                    if let value = Int(valueStr) {
+                        state.runtimeTextAlpha = max(0, min(255, value))
+                        print("Set text_alpha to \(value)")
+                    }
+                case "spiral_alpha", "alpha":
+                    if let value = Int(valueStr) {
+                        state.runtimeSpiralAlpha = max(0, min(255, value))
+                        print("Set spiral_alpha to \(value)")
+                    }
+                case "subliminal_alpha":
+                    if let value = Int(valueStr) {
+                        state.runtimeSubliminalAlpha = max(0, min(255, value))
+                        print("Set subliminal_alpha to \(value)")
+                    }
+                default:
+                    print("Warning: Unknown property '\(propertyName)' in !set_property")
+                }
+            }
+
+        case "random_jump":
+            // Jump to a randomly selected script from a list
+            // Syntax: !random_jump(['script1', 'script2', 'script3'])
+            if let scripts = extractArrayArg(from: trimmed), !scripts.isEmpty {
+                let randomIndex = Int.random(in: 0..<scripts.count)
+                var scriptName = scripts[randomIndex]
+
+                // Strip "self." prefix if present
+                if scriptName.hasPrefix("self.") {
+                    scriptName = String(scriptName.dropFirst(5))
+                }
+
+                do {
+                    try loadScript(named: scriptName)
+                    print("Random jump to script: \(scriptName) (selected from \(scripts.count) options)")
+                } catch {
+                    print("Error in random_jump to script '\(scriptName)': \(error)")
+                }
+            }
+
         case "cond":
             // Syntax: !cond('condition', ['word1', 'word2'], ['else1', 'else2'])
             // With one array: show words if condition is FALSE (guard pattern)
@@ -882,6 +945,38 @@ class SpiralEngine: ObservableObject {
             }
             return trimmed
         }
+    }
+
+    /// Extract a single array argument from command string like "cmd(['item1', 'item2'])"
+    private func extractArrayArg(from commandString: String) -> [String]? {
+        guard let bracketStart = commandString.firstIndex(of: "["),
+              let bracketEnd = commandString.lastIndex(of: "]") else {
+            return nil
+        }
+
+        let arrayString = String(commandString[commandString.index(after: bracketStart)..<bracketEnd])
+
+        var items: [String] = []
+        var currentItem = ""
+        var inQuote = false
+        var quoteChar: Character = "'"
+
+        for char in arrayString {
+            if (char == "'" || char == "\"") && !inQuote {
+                inQuote = true
+                quoteChar = char
+            } else if char == quoteChar && inQuote {
+                inQuote = false
+                items.append(currentItem)
+                currentItem = ""
+            } else if char == "," && !inQuote {
+                // Skip comma between items
+            } else if inQuote {
+                currentItem.append(char)
+            }
+        }
+
+        return items
     }
 
     /// Timeout action for mantra command

@@ -13,7 +13,6 @@ struct ConfigSelectionView: View {
     @State private var showingFullscreen = false
     @State private var showingVariables = false
     @State private var editingConfig: SpiralConfig?
-    @State private var editingURL: URL?
     @State private var showingResumeDialog = false
     @State private var savedStateToResume: SavedSessionState?
     @State private var resumeConfig: SpiralConfig?
@@ -75,9 +74,13 @@ struct ConfigSelectionView: View {
                     }
                 }
                 .onChange(of: navigateToConfig) { oldValue, newValue in
-                    // When returning from a session (navigateToConfig becomes nil), refocus search
+                    // When returning from a session (navigateToConfig becomes nil), reset state
                     if oldValue != nil && newValue == nil {
+                        // Clear saved state so it doesn't interfere with next selection
+                        savedStateToResume = nil
+                        resumeConfig = nil
                         searchText = ""
+                        // Refocus search after a delay to let navigation settle
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                             isSearchFocused = true
                         }
@@ -88,8 +91,11 @@ struct ConfigSelectionView: View {
         #if os(iOS)
         .fullScreenCover(isPresented: $showingFullscreen) { fullscreenContent }
         .onChange(of: showingFullscreen) { oldValue, newValue in
-            // When returning from fullscreen session on iOS, refocus search
+            // When returning from fullscreen session on iOS, reset state
             if oldValue == true && newValue == false {
+                savedStateToResume = nil
+                resumeConfig = nil
+                selectedConfig = nil
                 searchText = ""
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     isSearchFocused = true
@@ -291,10 +297,7 @@ struct ConfigSelectionView: View {
             .buttonStyle(.plain)
 
             Button {
-                if let url = viewModel.sourceURL(for: config) {
-                    editingURL = url
-                    editingConfig = config
-                }
+                editingConfig = config
             } label: {
                 Image(systemName: "pencil.circle")
                     .font(.title2)
@@ -350,7 +353,9 @@ struct ConfigSelectionView: View {
 
     @ViewBuilder
     private func editorSheet(for config: SpiralConfig) -> some View {
-        if let url = editingURL {
+        // Look up URL directly from viewModel instead of relying on editingURL state
+        // which may not have propagated when sheet first appears
+        if let url = viewModel.sourceURL(for: config) {
             ScriptEditorView(config: config, sourceURL: url)
                 .environment(viewModel)
         }

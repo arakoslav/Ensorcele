@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Combine
 
 struct SpiralView: View {
     let config: SpiralConfig
@@ -34,271 +35,18 @@ struct SpiralView: View {
                     .ignoresSafeArea()
 
                 if isLoading {
-                    // Loading screen
-                    VStack(spacing: 20) {
-                        ProgressView()
-                            .scaleEffect(1.5)
-                            .tint(.white)
-                        Text("Loading \(config.name)...")
-                            .foregroundColor(.white)
-                            .font(.title2)
-                    }
+                    loadingView
                 } else {
-                    // Main spiral rendering view
                     SpiralRenderView(state: state, config: config)
                 }
 
-                // Overlay controls (auto-hide on mouse idle)
                 if showUI {
-                    // Top bar with title and close button
-                    VStack {
-                        HStack {
-                            Text(config.name)
-                                .font(.headline)
-                                .foregroundColor(.white.opacity(0.7))
-                                .padding()
-                            Spacer()
-                            Button(action: { dismiss() }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.title)
-                                    .foregroundColor(.white.opacity(0.5))
-                            }
-                            .padding()
-                        }
-                        .background(Color.black.opacity(0.5))
-                        Spacer()
-                    }
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    #if os(macOS)
-                    .onContinuousHover { _ in onMouseMoved() }
-                    #else
-                    .simultaneousGesture(TapGesture().onEnded { onUserInteraction() })
-                    #endif
-
-                    // Bottom tempo slider
-                    VStack {
-                        Spacer()
-                        VStack(spacing: 8) {
-                            Text("Tempo: \(String(format: "%.1f", tempoMultiplier))x")
-                                .font(.caption)
-                                .foregroundColor(.white.opacity(0.7))
-
-                            HStack {
-                                Text("0.5x")
-                                    .font(.caption2)
-                                    .foregroundColor(.white.opacity(0.5))
-                                Slider(value: $tempoMultiplier, in: 0.5...5.0, step: 0.1)
-                                    .frame(maxWidth: 300)
-                                    .onChange(of: tempoMultiplier) { oldValue, newValue in
-                                        adjustTempo(newValue)
-                                    }
-                                Text("5.0x")
-                                    .font(.caption2)
-                                    .foregroundColor(.white.opacity(0.5))
-                            }
-                        }
-                        .padding()
-                        .background(Color.black.opacity(0.5))
-                        .cornerRadius(8)
-                        .padding(.bottom, 20)
-                    }
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    #if os(macOS)
-                    .onContinuousHover { _ in onMouseMoved() }
-                    #else
-                    .simultaneousGesture(TapGesture().onEnded { onUserInteraction() })
-                    #endif
-
-                    // Left sidebar with table of contents
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Scripts")
-                                .font(.caption)
-                                .foregroundColor(.white.opacity(0.5))
-                                .padding(.bottom, 4)
-
-                            ScrollView {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    ForEach(Array(config.scripts.keys.sorted()), id: \.self) { scriptName in
-                                        Button(action: {
-                                            jumpToScript(scriptName)
-                                        }) {
-                                            Text(scriptName)
-                                                .font(.caption)
-                                                .foregroundColor(.white.opacity(0.7))
-                                                .padding(.vertical, 4)
-                                                .padding(.horizontal, 8)
-                                                .frame(maxWidth: .infinity, alignment: .leading)
-                                        }
-                                        .buttonStyle(.plain)
-                                        .background(Color.white.opacity(0.1))
-                                        .cornerRadius(4)
-                                    }
-                                }
-                            }
-                        }
-                        .frame(width: 150)
-                        .padding()
-                        .background(Color.black.opacity(0.5))
-                        .cornerRadius(8)
-                        .padding(.leading, 20)
-
-                        Spacer()
-                    }
-                    .transition(.move(edge: .leading).combined(with: .opacity))
-                    #if os(macOS)
-                    .onContinuousHover { _ in onMouseMoved() }
-                    #else
-                    .simultaneousGesture(TapGesture().onEnded { onUserInteraction() })
-                    #endif
-
-                    // Right sidebar with controls
-                    HStack {
-                        Spacer()
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Controls")
-                                .font(.caption)
-                                .foregroundColor(.white.opacity(0.5))
-                                .padding(.bottom, 4)
-
-                            // Spiral type picker - using buttons instead of Menu for reliable iPad touch
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Spiral")
-                                    .font(.caption2)
-                                    .foregroundColor(.white.opacity(0.5))
-
-                                ForEach(SpiralType.allCases, id: \.self) { type in
-                                    Button {
-                                        state.activeSpiralType = type
-                                    } label: {
-                                        HStack(spacing: 6) {
-                                            Text(type.rawValue.capitalized)
-                                                .font(.caption)
-                                            Spacer()
-                                            if state.activeSpiralType == type {
-                                                Image(systemName: "checkmark")
-                                                    .font(.caption2)
-                                            }
-                                        }
-                                        .foregroundColor(state.activeSpiralType == type ? .white : .white.opacity(0.6))
-                                        .padding(.vertical, 6)
-                                        .padding(.horizontal, 10)
-                                        .background(state.activeSpiralType == type ? Color.white.opacity(0.2) : Color.white.opacity(0.1))
-                                        .cornerRadius(4)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-
-                            // Images toggle
-                            Button(action: {
-                                state.drawImages.toggle()
-                            }) {
-                                HStack(spacing: 6) {
-                                    Image(systemName: state.drawImages ? "photo.fill" : "photo")
-                                        .font(.caption)
-                                    Text("Images")
-                                        .font(.caption)
-                                }
-                                .foregroundColor(state.drawImages ? .white : .white.opacity(0.5))
-                                .padding(.vertical, 6)
-                                .padding(.horizontal, 10)
-                                .background(state.drawImages ? Color.white.opacity(0.2) : Color.white.opacity(0.1))
-                                .cornerRadius(4)
-                            }
-                            .buttonStyle(.plain)
-
-                            // Speaking toggle
-                            Button(action: {
-                                state.speakWords.toggle()
-                            }) {
-                                HStack(spacing: 6) {
-                                    Image(systemName: state.speakWords ? "speaker.wave.2.fill" : "speaker.slash")
-                                        .font(.caption)
-                                    Text("Speaking")
-                                        .font(.caption)
-                                }
-                                .foregroundColor(state.speakWords ? .white : .white.opacity(0.5))
-                                .padding(.vertical, 6)
-                                .padding(.horizontal, 10)
-                                .background(state.speakWords ? Color.white.opacity(0.2) : Color.white.opacity(0.1))
-                                .cornerRadius(4)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        .frame(width: 150)
-                        .padding()
-                        .background(Color.black.opacity(0.5))
-                        .cornerRadius(8)
-                        .padding(.trailing, 20)
-                    }
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-                    #if os(macOS)
-                    .onContinuousHover { _ in onMouseMoved() }
-                    #else
-                    .simultaneousGesture(TapGesture().onEnded { onUserInteraction() })
-                    #endif
+                    overlayControlsView
                 }
 
-                // Invisible overlay to track mouse/touch movement
-                #if os(macOS)
-                Color.clear
-                    .contentShape(Rectangle())
-                    .allowsHitTesting(!showUI)  // Don't block interaction when UI is visible
-                    .onContinuousHover { phase in
-                        switch phase {
-                        case .active(_):
-                            onMouseMoved()
-                        case .ended:
-                            break
-                        }
-                    }
-                #else
-                // On iOS, only show tap overlay when UI is hidden
-                // This prevents gesture conflicts with control buttons
-                // When UI is visible, taps on control panels reset the timer via simultaneousGesture
-                if !showUI {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            onUserInteraction()
-                        }
-                }
-                #endif
+                mouseTrackingOverlay
 
-                // Question dialogs (modal overlays) - light dim to keep spiral visible
-                if let question = state.currentQuestion {
-//                    // Awareness test has no overlay - user should keep staring at spiral
-//                    if case .awarenessTest = question {
-//                        // No overlay
-//                    } else {
-//                        Color.black.opacity(0.4)
-//                            .ignoresSafeArea()
-//                    }
-
-                    switch question {
-                    case .prompt(let message, let completion):
-                        PromptDialog(message: message, onDismiss: completion)
-
-                    case .openQuestion(let prompt, let variableName, let completion):
-                        OpenQuestionDialog(prompt: prompt, variableName: variableName, onSubmit: completion)
-
-                    case .yesNo(let question, let onYes, let onNo):
-                        YesNoQuestionDialog(question: question, onYes: onYes, onNo: onNo)
-
-                    case .challenge(let prompt, let variableName, let completion):
-                        ChallengeDialog(prompt: prompt, variableName: variableName, onSubmit: completion)
-
-                    case .setPref(let prompt, let variableName, let completion):
-                        SetPrefDialog(prompt: prompt, variableName: variableName, onSubmit: completion)
-
-                    case .mantra(let expectedText, let timeoutSeconds, let autoStartMic, let onComplete, let onTimeout):
-                        MantraDialog(expectedText: expectedText, timeoutSeconds: timeoutSeconds, autoStartMic: autoStartMic, onComplete: onComplete, onTimeout: onTimeout)
-
-                    case .awarenessTest(let message, let timeoutSeconds, let onDismiss, let onTimeout):
-                        AwarenessTestDialog(message: message, timeoutSeconds: timeoutSeconds, onDismiss: onDismiss, onTimeout: onTimeout)
-                    }
-                }
+                questionDialogView
             }
             .onAppear {
                 windowSize = geometry.size
@@ -323,6 +71,15 @@ struct SpiralView: View {
                 dismiss()
             }
         }
+        .onReceive(state.$currentQuestion) { newQuestion in
+            // Hide UI when awareness test begins (user should focus on spiral)
+            if case .awarenessTest = newQuestion {
+                withAnimation(.easeOut(duration: 0.3)) {
+                    showUI = false
+                }
+                mouseIdleTimer?.invalidate()
+            }
+        }
         .onAppear {
             #if os(iOS)
             // Prevent screen from sleeping during spiral playback
@@ -345,8 +102,293 @@ struct SpiralView: View {
         #endif
     }
 
+    // MARK: - Extracted Sub-Views
+
+    private var loadingView: some View {
+        VStack(spacing: 20) {
+            ProgressView()
+                .scaleEffect(1.5)
+                .tint(.white)
+            Text("Loading \(config.name)...")
+                .foregroundColor(.white)
+                .font(.title2)
+        }
+    }
+
+    @ViewBuilder
+    private var overlayControlsView: some View {
+        topBarView
+        bottomTempoView
+        leftSidebarView
+        rightSidebarView
+    }
+
+    private var topBarView: some View {
+        VStack {
+            HStack {
+                Text(config.name)
+                    .font(.headline)
+                    .foregroundColor(.white.opacity(0.7))
+                    .padding()
+                Spacer()
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title)
+                        .foregroundColor(.white.opacity(0.5))
+                }
+                .padding()
+            }
+            .background(Color.black.opacity(0.5))
+            Spacer()
+        }
+        .transition(.move(edge: .top).combined(with: .opacity))
+        #if os(macOS)
+        .onContinuousHover { _ in onMouseMoved() }
+        #else
+        .simultaneousGesture(TapGesture().onEnded { onUserInteraction() })
+        #endif
+    }
+
+    private var bottomTempoView: some View {
+        VStack {
+            Spacer()
+            VStack(spacing: 8) {
+                Text("Tempo: \(String(format: "%.1f", tempoMultiplier))x")
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.7))
+
+                HStack {
+                    Text("0.5x")
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.5))
+                    Slider(value: $tempoMultiplier, in: 0.5...5.0, step: 0.1)
+                        .frame(maxWidth: 300)
+                        .onChange(of: tempoMultiplier) { oldValue, newValue in
+                            adjustTempo(newValue)
+                        }
+                    Text("5.0x")
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.5))
+                }
+            }
+            .padding()
+            .background(Color.black.opacity(0.5))
+            .cornerRadius(8)
+            .padding(.bottom, 20)
+        }
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+        #if os(macOS)
+        .onContinuousHover { _ in onMouseMoved() }
+        #else
+        .simultaneousGesture(TapGesture().onEnded { onUserInteraction() })
+        #endif
+    }
+
+    private var leftSidebarView: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Scripts")
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.5))
+                    .padding(.bottom, 4)
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(Array(config.scripts.keys.sorted()), id: \.self) { scriptName in
+                            Button(action: {
+                                jumpToScript(scriptName)
+                            }) {
+                                Text(scriptName)
+                                    .font(.caption)
+                                    .foregroundColor(.white.opacity(0.7))
+                                    .padding(.vertical, 4)
+                                    .padding(.horizontal, 8)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .buttonStyle(.plain)
+                            .background(Color.white.opacity(0.1))
+                            .cornerRadius(4)
+                        }
+                    }
+                }
+            }
+            .frame(width: 150)
+            .padding()
+            .background(Color.black.opacity(0.5))
+            .cornerRadius(8)
+            .padding(.leading, 20)
+
+            Spacer()
+        }
+        .transition(.move(edge: .leading).combined(with: .opacity))
+        #if os(macOS)
+        .onContinuousHover { _ in onMouseMoved() }
+        #else
+        .simultaneousGesture(TapGesture().onEnded { onUserInteraction() })
+        #endif
+    }
+
+    private var rightSidebarView: some View {
+        HStack {
+            Spacer()
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Controls")
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.5))
+                    .padding(.bottom, 4)
+
+                spiralTypePicker
+                imagesToggleButton
+                speakingToggleButton
+            }
+            .frame(width: 150)
+            .padding()
+            .background(Color.black.opacity(0.5))
+            .cornerRadius(8)
+            .padding(.trailing, 20)
+        }
+        .transition(.move(edge: .trailing).combined(with: .opacity))
+        #if os(macOS)
+        .onContinuousHover { _ in onMouseMoved() }
+        #else
+        .simultaneousGesture(TapGesture().onEnded { onUserInteraction() })
+        #endif
+    }
+
+    private var spiralTypePicker: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Spiral")
+                .font(.caption2)
+                .foregroundColor(.white.opacity(0.5))
+
+            ForEach(SpiralType.allCases, id: \.self) { type in
+                Button {
+                    state.activeSpiralType = type
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(type.rawValue.capitalized)
+                            .font(.caption)
+                        Spacer()
+                        if state.activeSpiralType == type {
+                            Image(systemName: "checkmark")
+                                .font(.caption2)
+                        }
+                    }
+                    .foregroundColor(state.activeSpiralType == type ? .white : .white.opacity(0.6))
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 10)
+                    .background(state.activeSpiralType == type ? Color.white.opacity(0.2) : Color.white.opacity(0.1))
+                    .cornerRadius(4)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var imagesToggleButton: some View {
+        Button(action: {
+            state.drawImages.toggle()
+        }) {
+            HStack(spacing: 6) {
+                Image(systemName: state.drawImages ? "photo.fill" : "photo")
+                    .font(.caption)
+                Text("Images")
+                    .font(.caption)
+            }
+            .foregroundColor(state.drawImages ? .white : .white.opacity(0.5))
+            .padding(.vertical, 6)
+            .padding(.horizontal, 10)
+            .background(state.drawImages ? Color.white.opacity(0.2) : Color.white.opacity(0.1))
+            .cornerRadius(4)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var speakingToggleButton: some View {
+        Button(action: {
+            state.speakWords.toggle()
+        }) {
+            HStack(spacing: 6) {
+                Image(systemName: state.speakWords ? "speaker.wave.2.fill" : "speaker.slash")
+                    .font(.caption)
+                Text("Speaking")
+                    .font(.caption)
+            }
+            .foregroundColor(state.speakWords ? .white : .white.opacity(0.5))
+            .padding(.vertical, 6)
+            .padding(.horizontal, 10)
+            .background(state.speakWords ? Color.white.opacity(0.2) : Color.white.opacity(0.1))
+            .cornerRadius(4)
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var mouseTrackingOverlay: some View {
+        #if os(macOS)
+        Color.clear
+            .contentShape(Rectangle())
+            .allowsHitTesting(!showUI && !isAwarenessTestActive)
+            .onContinuousHover { phase in
+                switch phase {
+                case .active(_):
+                    onMouseMoved()
+                case .ended:
+                    break
+                }
+            }
+        #else
+        if !showUI && !isAwarenessTestActive {
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    onUserInteraction()
+                }
+        }
+        #endif
+    }
+
+    @ViewBuilder
+    private var questionDialogView: some View {
+        if let question = state.currentQuestion {
+            switch question {
+            case .prompt(let message, let completion):
+                PromptDialog(message: message, onDismiss: completion)
+
+            case .openQuestion(let prompt, let variableName, let completion):
+                OpenQuestionDialog(prompt: prompt, variableName: variableName, onSubmit: completion)
+
+            case .yesNo(let question, let onYes, let onNo):
+                YesNoQuestionDialog(question: question, onYes: onYes, onNo: onNo)
+
+            case .challenge(let prompt, let variableName, let completion):
+                ChallengeDialog(prompt: prompt, variableName: variableName, onSubmit: completion)
+
+            case .setPref(let prompt, let variableName, let completion):
+                SetPrefDialog(prompt: prompt, variableName: variableName, onSubmit: completion)
+
+            case .mantra(let expectedText, let timeoutSeconds, let autoStartMic, let onComplete, let onTimeout):
+                MantraDialog(expectedText: expectedText, timeoutSeconds: timeoutSeconds, autoStartMic: autoStartMic, onComplete: onComplete, onTimeout: onTimeout)
+
+            case .awarenessTest(let message, let timeoutSeconds, let onDismiss, let onTimeout):
+                AwarenessTestDialog(message: message, timeoutSeconds: timeoutSeconds, onDismiss: onDismiss, onTimeout: onTimeout)
+            }
+        }
+    }
+
+    /// Check if an awareness test is currently showing (suppress UI in this case)
+    private var isAwarenessTestActive: Bool {
+        if case .awarenessTest = state.currentQuestion {
+            return true
+        }
+        return false
+    }
+
     /// Handle user interaction - show UI and reset hide timer
     private func onUserInteraction() {
+        // Don't show UI during awareness test - user should keep staring at spiral
+        guard !isAwarenessTestActive else { return }
+
         withAnimation(.easeOut(duration: 0.3)) {
             showUI = true
         }
@@ -396,9 +438,18 @@ struct SpiralView: View {
         let spiralType = state.activeSpiralType
         print("Regenerating spiral for size: \(size), type: \(spiralType)")
         await Task {
-            state.spiralImage = SpiralRenderer.generateSpiral(config: config, size: size, spiralType: spiralType)
-            // Generate counter-rotating layer for twist spirals
-            state.counterSpiralImage = SpiralRenderer.generateCounterSpiral(config: config, size: size, spiralType: spiralType)
+            // Rings type uses Canvas-based rendering (no bitmap needed)
+            if spiralType == .rings {
+                state.spiralImage = nil
+                state.counterSpiralImage = nil
+                state.spiralFrames = []
+                print("Using Canvas-based rendering for rings")
+            } else {
+                state.spiralFrames = []
+                state.spiralImage = SpiralRenderer.generateSpiral(config: config, size: size, spiralType: spiralType)
+                // Generate counter-rotating layer for twist spirals
+                state.counterSpiralImage = SpiralRenderer.generateCounterSpiral(config: config, size: size, spiralType: spiralType)
+            }
         }.value
     }
 
@@ -495,15 +546,22 @@ struct SpiralRenderView: View {
             }
 
             // Spiral layer (middle)
-            if state.drawSpiral, let spiral = state.spiralImage {
-                spiralImageView(spiral, rotation: state.spiralRotation,
-                               tiltX: state.spiralTiltX, tiltY: state.spiralTiltY)
+            if state.drawSpiral {
+                // Use Canvas-based rendering for rings type (hardware accelerated)
+                if state.activeSpiralType == .rings {
+                    RingsCanvasView(state: state, config: config)
+                        .opacity(Double(state.getEffectiveSpiralAlpha()) / 255.0)
+                } else if let spiral = state.spiralImage {
+                    // Bitmap-based rendering for other spiral types
+                    spiralImageView(spiral, rotation: state.spiralRotation,
+                                   tiltX: state.spiralTiltX, tiltY: state.spiralTiltY)
 
-                // Counter-rotating layer for twist spirals (separate wobble surface)
-                if let counterSpiral = state.counterSpiralImage {
-                    spiralImageView(counterSpiral, rotation: state.counterSpiralRotation,
-                                   tiltX: state.counterSpiralTiltX, tiltY: state.counterSpiralTiltY)
-                        .blendMode(.screen)  // Blend with main spiral
+                    // Counter-rotating layer for twist spirals (separate wobble surface)
+                    if let counterSpiral = state.counterSpiralImage {
+                        spiralImageView(counterSpiral, rotation: state.counterSpiralRotation,
+                                       tiltX: state.counterSpiralTiltX, tiltY: state.counterSpiralTiltY)
+                            .blendMode(.screen)  // Blend with main spiral
+                    }
                 }
             }
 
@@ -662,5 +720,96 @@ struct SubliminalTextView: View {
             x: centerX + CGFloat.random(in: -scatter...scatter),
             y: centerY + CGFloat.random(in: -scatter...scatter)
         )
+    }
+}
+
+/// Hardware-accelerated concentric rings using SwiftUI Canvas + TimelineView
+/// Rings expand smoothly outward from center
+struct RingsCanvasView: View {
+    @ObservedObject var state: SpiralState
+    let config: SpiralConfig
+
+    var body: some View {
+        TimelineView(.animation) { _ in
+            let phase = state.ringsPhase
+            let rotation = state.spiralRotation
+
+            GeometryReader { geometry in
+                // Use diagonal size to prevent clipping during rotation
+                let diagonal = sqrt(geometry.size.width * geometry.size.width +
+                                   geometry.size.height * geometry.size.height)
+                let canvasSize = diagonal * 1.2
+
+                Canvas { context, size in
+                    let center = CGPoint(x: size.width / 2, y: size.height / 2)
+                    let maxRadius = diagonal / 2
+                    let baseSpacing = config.properties.ringsSpacing
+                    let lineWidth = config.properties.ringsLineWidth
+                    let pulseWave = config.properties.ringsPulseWave
+
+                    // Base color from config
+                    let baseR = Double(config.properties.color[0]) / 255.0
+                    let baseG = Double(config.properties.color[1]) / 255.0
+                    let baseB = Double(config.properties.color[2]) / 255.0
+
+                    // Calculate ring positions relative to continuously increasing phase
+                    // Ring i's radius = phase - birthPosition[i]
+                    // birthPosition[i] = cumulative spacing of all rings born before it
+
+                    var birthPosition: Double = 0
+                    var ringIndex = 0
+                    let maxRings = Int(maxRadius / (baseSpacing * 0.3)) + 20  // Safety limit
+
+                    while ringIndex < maxRings {
+                        let radius = phase - birthPosition
+
+                        // Stop if this ring hasn't been born yet (would be negative)
+                        if radius < 0 { break }
+
+                        // Calculate wave position for this ring (same as spacing calc)
+                        let wavePos = Double(ringIndex) / 4.0
+                        let waveFactor = sin(wavePos * 2.0 * .pi)  // -1 to 1
+
+                        // Color varies with wave: troughs are warmer (red/yellow), peaks are cooler (blue/cyan)
+                        // Subtle shift - blend base color with wave-based tint
+                        let colorShift = waveFactor * 0.3 * pulseWave
+                        let r = min(1.0, max(0.0, baseR + colorShift * 0.5))
+                        let g = min(1.0, max(0.0, baseG - abs(colorShift) * 0.2))
+                        let b = min(1.0, max(0.0, baseB - colorShift * 0.5))
+                        let ringColor = Color(red: r, green: g, blue: b)
+
+                        // Only draw if on screen
+                        if radius > 0 && radius < maxRadius + baseSpacing {
+                            let rect = CGRect(
+                                x: center.x - radius,
+                                y: center.y - radius,
+                                width: radius * 2,
+                                height: radius * 2
+                            )
+
+                            context.stroke(
+                                Circle().path(in: rect),
+                                with: .color(ringColor),
+                                lineWidth: lineWidth
+                            )
+                        }
+
+                        // Calculate spacing to next ring (when it was born)
+                        var spacing = baseSpacing
+                        if pulseWave > 0 {
+                            spacing = baseSpacing * (1.0 + pulseWave * 0.7 * waveFactor)
+                            spacing = max(spacing, baseSpacing * 0.2)
+                        }
+
+                        birthPosition += spacing
+                        ringIndex += 1
+                    }
+                }
+                .frame(width: canvasSize, height: canvasSize)
+                .rotationEffect(.degrees(rotation))
+                .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+            }
+            .ignoresSafeArea()
+        }
     }
 }

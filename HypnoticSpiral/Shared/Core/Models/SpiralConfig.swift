@@ -14,8 +14,9 @@ enum SpiralType: String, Codable, CaseIterable {
     case logarithmic = "logarithmic"    // Constant-angle swoopy spiral: r = a * e^(bθ)
     case filled = "filled"              // Filled alternating sectors (half-screen tint)
     case twist = "twist"                // Counter-rotating layers
-    case nimja = "nimja"                // Nimja-style: curved wedge sectors with strong pull effect
     case chromatic = "chromatic"        // Shader-style with chromatic aberration (RGB offset)
+    case colors = "colors"              // Color-shifting bands flowing outward (was "rings")
+    case rings = "rings"                // Concentric rings expanding from center with texture
 
     static var `default`: SpiralType { .twist }
 }
@@ -58,6 +59,18 @@ struct SpiralConfig: Codable, Identifiable, Hashable {
         let spiralTightness: Double  // Controls spacing (logarithmic: growth rate, fermat: density)
         let spiralLineWidth: Double  // Width of spiral lines
         let spiralCounterRate: Double  // For twist: counter-rotation speed multiplier (e.g., 0.7 = 70% speed)
+
+        // Colors properties (for colors spiral type - formerly "rings")
+        let colorsSpokes: Int           // Number of spokes (0 = no spokes, creates wheel texture)
+        let colorsBandCount: Int        // Number of concentric color bands
+        let colorsExpansionRate: Double // How fast colors appear to flow outward
+
+        // Rings properties (for rings spiral type - concentric expanding rings)
+        let ringsLineWidth: Double      // Width of each ring line
+        let ringsSpacing: Double        // Base spacing between rings
+        let ringsPulseWave: Double      // 0 = uniform spacing, >0 = pulsed density waves
+        let ringsTextured: Bool         // If true, rings have radial texture to show rotation
+        let ringsExpansionRate: Double  // How fast rings expand outward (1.0 = normal)
 
         // Text properties
         let textColor: [Int]
@@ -113,6 +126,18 @@ struct SpiralConfig: Codable, Identifiable, Hashable {
             spiralLineWidth = try container.decodeIfPresent(Double.self, forKey: .spiralLineWidth) ?? 4.0
             spiralCounterRate = try container.decodeIfPresent(Double.self, forKey: .spiralCounterRate) ?? 0.7
 
+            // Colors properties (formerly rings)
+            colorsSpokes = try container.decodeIfPresent(Int.self, forKey: .colorsSpokes) ?? 0
+            colorsBandCount = try container.decodeIfPresent(Int.self, forKey: .colorsBandCount) ?? 12
+            colorsExpansionRate = try container.decodeIfPresent(Double.self, forKey: .colorsExpansionRate) ?? 1.0
+
+            // Rings properties (new concentric rings)
+            ringsLineWidth = try container.decodeIfPresent(Double.self, forKey: .ringsLineWidth) ?? 8.0
+            ringsSpacing = try container.decodeIfPresent(Double.self, forKey: .ringsSpacing) ?? 25.0
+            ringsPulseWave = try container.decodeIfPresent(Double.self, forKey: .ringsPulseWave) ?? 0.5
+            ringsTextured = try container.decodeIfPresent(Bool.self, forKey: .ringsTextured) ?? false
+            ringsExpansionRate = try container.decodeIfPresent(Double.self, forKey: .ringsExpansionRate) ?? 3.0
+
             textColor = try container.decodeIfPresent([Int].self, forKey: .textColor) ?? [0, 51, 204]
             textAlpha = try container.decodeIfPresent(Int.self, forKey: .textAlpha) ?? 254
 
@@ -158,6 +183,14 @@ struct SpiralConfig: Codable, Identifiable, Hashable {
             case spiralTightness = "spiral_tightness"
             case spiralLineWidth = "spiral_line_width"
             case spiralCounterRate = "spiral_counter_rate"
+            case colorsSpokes = "colors_spokes"
+            case colorsBandCount = "colors_band_count"
+            case colorsExpansionRate = "colors_expansion_rate"
+            case ringsLineWidth = "rings_line_width"
+            case ringsSpacing = "rings_spacing"
+            case ringsPulseWave = "rings_pulse_wave"
+            case ringsTextured = "rings_textured"
+            case ringsExpansionRate = "rings_expansion_rate"
             case voice
             case subliminalAlpha = "subliminal_alpha"
             case subliminalColor = "subliminal_color"

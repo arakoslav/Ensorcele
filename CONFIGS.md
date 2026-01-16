@@ -81,6 +81,17 @@ The `properties` object controls appearance, timing, and behavior.
 | `twist` | Counter-rotating double-layer spirals |
 | `nimja` | Curved wedge sectors with strong pull effect |
 | `chromatic` | Shader-style with RGB chromatic aberration |
+| `rings` | Concentric flowing rings with color shifting and optional spokes |
+
+#### Rings Properties (for `rings` spiral type)
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `rings_spokes` | int | 0 | Number of spokes for wheel texture (0 = no spokes) |
+| `rings_band_count` | int | 12 | Number of concentric ring bands |
+| `rings_expansion_rate` | float | 1.0 | How fast rings appear to flow outward |
+
+When `rings_spokes` is set to a non-zero value, the rings display radial spoke patterns that create a "whirling wheels" effect. Different bands have spokes at different rotation offsets, making them appear to rotate in different directions when the spiral rotates.
 
 ### Text Properties
 
@@ -269,12 +280,36 @@ Commands are prefixed with `!` and control program behavior.
 | Command | Description |
 |---------|-------------|
 | `!jump('scriptName')` | Jump to another script |
+| `!random_jump(['s1', 's2', ...])` | Jump to a randomly selected script from the list |
 | `!quit()` | End the program |
 
 Jump supports `self.` and `parent.` prefixes:
 ```json
 "!jump('self.body')"
 "!jump('parent.inherited')"
+```
+
+#### `!random_jump(['script1', 'script2', 'script3'])`
+Randomly select one script from the array and jump to it. Useful for varying content across sessions.
+
+```json
+"!random_jump(['self.induction1', 'self.induction2', 'self.induction3'])"
+```
+
+### Runtime Property Control
+
+#### `!set_property('property', value)`
+Dynamically change a property value at runtime. Useful for phase-based effects like fading images in/out.
+
+**Supported properties:**
+- `image_alpha` - Image opacity (0-255)
+- `text_alpha` - Text opacity (0-255)
+- `spiral_alpha` or `alpha` - Spiral opacity (0-255)
+- `subliminal_alpha` - Subliminal text opacity (0-255)
+
+```json
+"!set_property('image_alpha', 128)",
+"!set_property('text_alpha', 200)"
 ```
 
 ### User Input Commands
