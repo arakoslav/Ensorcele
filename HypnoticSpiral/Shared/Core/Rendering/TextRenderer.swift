@@ -51,29 +51,34 @@ struct OutlinedText: View {
     }
 }
 
-/// Renders text from SpiralConfig color settings
+/// Renders text from SpiralConfig color settings with optional runtime overrides from state
 struct ConfiguredText: View {
     let text: String
     let config: SpiralConfig
     let fontSize: CGFloat
+    var state: SpiralState?
 
-    init(_ text: String, config: SpiralConfig, fontSize: CGFloat = 48) {
+    init(_ text: String, config: SpiralConfig, fontSize: CGFloat = 48, state: SpiralState? = nil) {
         self.text = text
         self.config = config
         self.fontSize = fontSize
+        self.state = state
     }
 
     var body: some View {
+        // Use runtime overrides if available, otherwise fall back to config
+        let colorRGB = state?.getEffectiveTextColor() ?? config.properties.textColor
         let textColor = Color(
-            red: Double(config.properties.textColor[0]) / 255.0,
-            green: Double(config.properties.textColor[1]) / 255.0,
-            blue: Double(config.properties.textColor[2]) / 255.0
+            red: Double(colorRGB[0]) / 255.0,
+            green: Double(colorRGB[1]) / 255.0,
+            blue: Double(colorRGB[2]) / 255.0
         )
-        let textAlpha = Double(config.properties.textAlpha) / 255.0
+        let textAlpha = Double(state?.getEffectiveTextAlpha() ?? config.properties.textAlpha) / 255.0
+        let effectiveFontSize = state?.runtimeFontSize ?? fontSize
 
         OutlinedText(
             text,
-            fontSize: fontSize,
+            fontSize: effectiveFontSize,
             textColor: textColor.opacity(textAlpha)
         )
     }

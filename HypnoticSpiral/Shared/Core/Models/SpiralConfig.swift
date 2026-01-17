@@ -102,6 +102,31 @@ struct SpiralConfig: Codable, Identifiable, Hashable {
             let spiral: Int
             let images: Int
             let words: Int
+            let backgroundWords: Int  // How often to cycle background words (when using word list)
+            let subliminals: Int      // How often to cycle subliminal words (when using word list)
+
+            enum CodingKeys: String, CodingKey {
+                case spiral, images, words
+                case backgroundWords = "background_words"
+                case subliminals
+            }
+
+            init(spiral: Int, images: Int, words: Int, backgroundWords: Int = 120, subliminals: Int = 60) {
+                self.spiral = spiral
+                self.images = images
+                self.words = words
+                self.backgroundWords = backgroundWords
+                self.subliminals = subliminals
+            }
+
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                spiral = try container.decodeIfPresent(Int.self, forKey: .spiral) ?? 1
+                images = try container.decodeIfPresent(Int.self, forKey: .images) ?? 50
+                words = try container.decodeIfPresent(Int.self, forKey: .words) ?? 40
+                backgroundWords = try container.decodeIfPresent(Int.self, forKey: .backgroundWords) ?? 120
+                subliminals = try container.decodeIfPresent(Int.self, forKey: .subliminals) ?? 60
+            }
         }
 
         // Custom decoder with default values for missing fields
@@ -143,7 +168,7 @@ struct SpiralConfig: Codable, Identifiable, Hashable {
 
             frameRate = try container.decodeIfPresent(Int.self, forKey: .frameRate) ?? 60
             timeScale = try container.decodeIfPresent(Int.self, forKey: .timeScale) ?? 2
-            frequencies = try container.decodeIfPresent(Frequencies.self, forKey: .frequencies) ?? Frequencies(spiral: 1, images: 50, words: 40)
+            frequencies = try container.decodeIfPresent(Frequencies.self, forKey: .frequencies) ?? Frequencies(spiral: 1, images: 50, words: 40, backgroundWords: 120, subliminals: 60)
             minimumDelay = try container.decodeIfPresent(Int.self, forKey: .minimumDelay) ?? 0
             maximumDelay = try container.decodeIfPresent(Int.self, forKey: .maximumDelay) ?? 0
 

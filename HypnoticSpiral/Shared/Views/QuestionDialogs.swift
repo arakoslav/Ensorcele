@@ -88,10 +88,16 @@ struct OpenQuestionDialog: View {
 }
 
 /// Yes/No question that branches to different scripts
+/// Optionally auto-selects an answer after timeout (for auto-advance behavior)
 struct YesNoQuestionDialog: View {
     let question: String
     let onYes: () -> Void
     let onNo: () -> Void
+    let timeoutSeconds: Int?
+    let timeoutDefault: String?
+
+    @State private var remainingTime: Int = 0
+    @State private var timer: Timer?
 
     var body: some View {
         VStack(spacing: 20) {
@@ -103,23 +109,58 @@ struct YesNoQuestionDialog: View {
 
             HStack(spacing: 20) {
                 Button("No") {
+                    timer?.invalidate()
                     onNo()
                 }
                 .keyboardShortcut("n")
                 .buttonStyle(.bordered)
 
                 Button("Yes") {
+                    timer?.invalidate()
                     onYes()
                 }
                 .keyboardShortcut("y")
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
             }
+
+            // Show countdown if timeout is active
+            if let _ = timeoutSeconds, remainingTime > 0 {
+                Text("Auto-selecting in \(remainingTime)s...")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
         }
         .padding(40)
         .background(Color(white: 0.7))
         .cornerRadius(12)
         .shadow(radius: 20)
+        .onAppear {
+            if let timeout = timeoutSeconds, timeout > 0 {
+                remainingTime = timeout
+                startTimer()
+            }
+        }
+        .onDisappear {
+            timer?.invalidate()
+        }
+    }
+
+    private func startTimer() {
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            if remainingTime > 1 {
+                remainingTime -= 1
+            } else {
+                timer?.invalidate()
+                // Auto-select based on timeoutDefault
+                if timeoutDefault?.lowercased() == "no" {
+                    onNo()
+                } else {
+                    // Default to "yes" if not specified or "yes"
+                    onYes()
+                }
+            }
+        }
     }
 }
 

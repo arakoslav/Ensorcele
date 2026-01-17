@@ -40,7 +40,7 @@ class SpiralEngine: ObservableObject {
     /// Commands that require user interaction and should stop pre-buffering
     private let interactiveCommands: Set<String> = [
         "prompt", "short_prompt", "open_question", "yn_question", "question_yn",
-        "challenge", "set_pref", "mantra", "speak_mantra", "awareness_test", "quit"
+        "challenge", "set_pref", "mantra", "speak_mantra", "awareness_test", "awareness_test_inv", "quit"
     ]
 
     // Time-based spiral rotation
@@ -260,13 +260,14 @@ class SpiralEngine: ObservableObject {
         // This continues even when waiting for user input (dialogs)
         if state.drawSpiral && (state.spiralImage != nil || state.activeSpiralType == .rings) {
             let elapsed = now - spiralStartTime
-            // spiralRotationRate is in degrees per second
-            state.spiralRotation = -elapsed * spiralRotationRate
+            // spiralRotationRate is in degrees per second, apply runtime speed multiplier
+            let effectiveRate = spiralRotationRate * state.getEffectiveSpiralSpeed()
+            state.spiralRotation = -elapsed * effectiveRate
 
             // Counter-rotation for twist spirals (opposite direction, different rate)
             if state.counterSpiralImage != nil {
                 let counterRate = config.properties.spiralCounterRate
-                state.counterSpiralRotation = elapsed * spiralRotationRate * counterRate
+                state.counterSpiralRotation = elapsed * effectiveRate * counterRate
             }
 
             // Add pulsing scale effect (oscillates between 1.3 and 1.5 - scaled up to prevent edge clipping during wobble)
@@ -318,6 +319,10 @@ class SpiralEngine: ObservableObject {
                     state.frequencies[key] = config.properties.frequencies.images
                 case "words":
                     state.frequencies[key] = config.properties.frequencies.words
+                case "backgroundWords":
+                    state.frequencies[key] = config.properties.frequencies.backgroundWords
+                case "subliminals":
+                    state.frequencies[key] = config.properties.frequencies.subliminals
                 default:
                     break
                 }
@@ -334,6 +339,10 @@ class SpiralEngine: ObservableObject {
             handleImageTick()
         case "words":
             handleWordTick()
+        case "backgroundWords":
+            handleBackgroundWordTick()
+        case "subliminals":
+            handleSubliminalTick()
         default:
             break
         }
@@ -372,6 +381,35 @@ class SpiralEngine: ObservableObject {
             // Text sequence exhausted - program has ended
             state.programEnded = true
             stop()
+        }
+    }
+
+    /// Advance to next background word in the cycling list
+    private func handleBackgroundWordTick() {
+        guard !state.backgroundWords.isEmpty else { return }
+
+        // Cycle to next word
+        state.backgroundWordIndex = (state.backgroundWordIndex + 1) % state.backgroundWords.count
+        state.backgroundText = state.backgroundWords[state.backgroundWordIndex]
+    }
+
+    /// Advance to next subliminal word in the cycling list
+    private func handleSubliminalTick() {
+        guard !state.subliminalWords.isEmpty else { return }
+
+        // Check display probability (supports runtime override)
+        let displayProbability = state.getEffectiveSubliminalDisplayProbability()
+        if Int.random(in: 1...100) > displayProbability {
+            state.subliminalText = ""
+            return
+        }
+
+        // Check change probability (supports runtime override)
+        let changeProbability = state.getEffectiveSubliminalChangeProbability()
+        if Int.random(in: 1...100) <= changeProbability {
+            // Cycle to next word
+            state.subliminalWordIndex = (state.subliminalWordIndex + 1) % state.subliminalWords.count
+            state.subliminalText = state.subliminalWords[state.subliminalWordIndex]
         }
     }
 
@@ -657,8 +695,48 @@ class SpiralEngine: ObservableObject {
             }
         case "background":
             if let args = extractArgs(from: trimmed) {
-                let text = await performVariableSubstitution(args.first ?? "")
-                state.backgroundText = text  // Empty string clears it
+                if args.count > 1 {
+                    // Multiple arguments - set up cycling through word list
+                    var words: [String] = []
+                    for arg in args {
+                        let text = await performVariableSubstitution(arg)
+                        words.append(text)
+                    }
+                    state.backgroundWords = words
+                    state.backgroundWordIndex = 0
+                    state.backgroundText = words.first ?? ""
+                } else {
+                    // Single argument or empty - static text (clears cycling)
+                    let text = await performVariableSubstitution(args.first ?? "")
+                    state.backgroundWords = []
+                    state.backgroundWordIndex = 0
+                    state.backgroundText = text  // Empty string clears it
+                }
+            }
+        case "subliminals":
+            if let args = extractArgs(from: trimmed) {
+                if args.count > 1 {
+                    // Multiple arguments - set up cycling through word list
+                    var words: [String] = []
+                    for arg in args {
+                        let text = await performVariableSubstitution(arg)
+                        words.append(text)
+                    }
+                    state.subliminalWords = words
+                    state.subliminalWordIndex = 0
+                    state.subliminalText = words.first ?? ""
+                } else if let firstArg = args.first, !firstArg.isEmpty {
+                    // Single non-empty argument - static subliminal text (clears cycling)
+                    let text = await performVariableSubstitution(firstArg)
+                    state.subliminalWords = []
+                    state.subliminalWordIndex = 0
+                    state.subliminalText = text
+                } else {
+                    // Empty - clear subliminals
+                    state.subliminalWords = []
+                    state.subliminalWordIndex = 0
+                    state.subliminalText = ""
+                }
             }
 
         // Image commands
@@ -761,12 +839,19 @@ class SpiralEngine: ObservableObject {
             }
 
         case "yn_question", "question_yn":
+            // Syntax: !yn_question('question', 'yes_script', 'no_script')
+            // Or with timeout: !yn_question('question', 'yes_script', 'no_script', 30, 'yes')
+            // Timeout auto-selects 'yes' or 'no' after N seconds (for auto-advance behavior)
             if let args = extractArgs(from: trimmed), args.count >= 3 {
                 let question = await performVariableSubstitution(args[0])
                 // Strip "self." prefix from script names if present
                 let yesScript = args[1].replacingOccurrences(of: "self.", with: "")
                 let noScript = args[2].replacingOccurrences(of: "self.", with: "")
-                await showYesNoQuestion(question: question, yesScript: yesScript, noScript: noScript)
+                // Optional timeout parameters
+                let timeoutSeconds = args.count >= 4 ? Int(args[3]) : nil
+                let timeoutDefault = args.count >= 5 ? args[4].lowercased() : nil
+                await showYesNoQuestion(question: question, yesScript: yesScript, noScript: noScript,
+                                        timeoutSeconds: timeoutSeconds, timeoutDefault: timeoutDefault)
             }
 
         case "challenge":
@@ -823,10 +908,23 @@ class SpiralEngine: ObservableObject {
                 await showAwarenessTest(message: message, timeoutSeconds: timeoutSeconds, jumpTarget: jumpTarget)
             }
 
+        case "awareness_test_inv":
+            // Inverted awareness test - for induction relaxation checks
+            // If user CLICKS (notices the message), they're not in trance -> jump to script
+            // If timeout (didn't notice), they're in trance -> continue inline
+            // Syntax: !awareness_test_inv('Click if you notice this', 10, 'self.repeat_induction')
+            if let args = extractArgs(from: trimmed), args.count >= 3 {
+                let message = await performVariableSubstitution(args[0])
+                let timeoutSeconds = Int(args[1]) ?? 10
+                let jumpTarget = args[2].replacingOccurrences(of: "self.", with: "")
+                await showAwarenessTestInverted(message: message, timeoutSeconds: timeoutSeconds, jumpTarget: jumpTarget)
+            }
+
         case "set_property":
             // Dynamically set a runtime property value
             // Syntax: !set_property('property_name', value)
-            // Supported: image_alpha, text_alpha, spiral_alpha, subliminal_alpha
+            // Supported: image_alpha, text_alpha, spiral_alpha, subliminal_alpha,
+            //            spiral_type, text_color, spiral_color, font_size, background_font_size, subliminal_color
             if let args = extractArgs(from: trimmed), args.count >= 2 {
                 let propertyName = args[0]
                 let valueStr = args[1]
@@ -852,9 +950,142 @@ class SpiralEngine: ObservableObject {
                         state.runtimeSubliminalAlpha = max(0, min(255, value))
                         print("Set subliminal_alpha to \(value)")
                     }
+                case "spiral_type":
+                    if let spiralType = SpiralType(rawValue: valueStr.lowercased()) {
+                        state.activeSpiralType = spiralType
+                        // Regenerate spiral image for new type
+                        Task {
+                            await regenerateSpiralForType(spiralType)
+                        }
+                        print("Set spiral_type to \(valueStr)")
+                    } else {
+                        print("Warning: Unknown spiral type '\(valueStr)'. Valid types: fermat, logarithmic, filled, twist, chromatic, colors, rings")
+                    }
+                case "text_color":
+                    if let rgb = parseColor(valueStr) {
+                        state.runtimeTextColor = rgb
+                        print("Set text_color to \(rgb)")
+                    }
+                case "spiral_color":
+                    if let rgb = parseColor(valueStr) {
+                        state.runtimeSpiralColor = rgb
+                        // Regenerate spiral with new color
+                        Task {
+                            await regenerateSpiralForType(state.activeSpiralType)
+                        }
+                        print("Set spiral_color to \(rgb)")
+                    }
+                case "subliminal_color":
+                    if let rgb = parseColor(valueStr) {
+                        state.runtimeSubliminalColor = rgb
+                        print("Set subliminal_color to \(rgb)")
+                    }
+                case "font_size":
+                    if let value = Double(valueStr) {
+                        state.runtimeFontSize = CGFloat(max(8, min(500, value)))
+                        print("Set font_size to \(value)")
+                    }
+                case "background_font_size":
+                    if let value = Double(valueStr) {
+                        state.runtimeBackgroundFontSize = CGFloat(max(8, min(1000, value)))
+                        print("Set background_font_size to \(value)")
+                    }
+                case "image_dir":
+                    // Set new image directory - view will observe and reload images
+                    state.runtimeImageDir = valueStr
+                    state.imageIndex = 0
+                    state.holdImageIndex = -1
+                    print("Set image_dir to \(valueStr)")
+
+                // Timing properties
+                case "word_frequency", "words_frequency":
+                    if let value = Int(valueStr) {
+                        state.runtimeWordFrequency = max(1, value)
+                        // Update the frequency counter immediately
+                        state.frequencies["words"] = state.runtimeWordFrequency
+                        print("Set word_frequency to \(value)")
+                    }
+                case "image_frequency", "images_frequency":
+                    if let value = Int(valueStr) {
+                        state.runtimeImageFrequency = max(1, value)
+                        state.frequencies["images"] = state.runtimeImageFrequency
+                        print("Set image_frequency to \(value)")
+                    }
+                case "spiral_speed", "rotation_speed":
+                    if let value = Double(valueStr) {
+                        state.runtimeSpiralSpeed = max(0.1, min(10.0, value))
+                        print("Set spiral_speed to \(value)")
+                    }
+
+                // Spiral appearance properties
+                case "spiral_line_width":
+                    if let value = Double(valueStr) {
+                        state.runtimeSpiralLineWidth = max(0.5, min(20.0, value))
+                        print("Set spiral_line_width to \(value)")
+                    }
+                case "spiral_tightness":
+                    if let value = Double(valueStr) {
+                        state.runtimeSpiralTightness = max(0.01, min(1.0, value))
+                        print("Set spiral_tightness to \(value)")
+                    }
+                case "spiral_arms":
+                    if let value = Int(valueStr) {
+                        state.runtimeSpiralArms = max(1, min(12, value))
+                        print("Set spiral_arms to \(value)")
+                    }
+
+                // Subliminal behavior properties
+                case "subliminal_scatter":
+                    if let value = Int(valueStr) {
+                        state.runtimeSubliminalScatter = max(0, min(1000, value))
+                        print("Set subliminal_scatter to \(value)")
+                    }
+                case "subliminal_move_probability":
+                    if let value = Int(valueStr) {
+                        state.runtimeSubliminalMoveProbability = max(0, min(100, value))
+                        print("Set subliminal_move_probability to \(value)")
+                    }
+                case "subliminal_display_probability":
+                    if let value = Int(valueStr) {
+                        state.runtimeSubliminalDisplayProbability = max(0, min(100, value))
+                        print("Set subliminal_display_probability to \(value)")
+                    }
+                case "subliminal_change_probability":
+                    if let value = Int(valueStr) {
+                        state.runtimeSubliminalChangeProbability = max(0, min(100, value))
+                        print("Set subliminal_change_probability to \(value)")
+                    }
+
+                // Rings/Colors properties
+                case "rings_line_width":
+                    if let value = Double(valueStr) {
+                        state.runtimeRingsLineWidth = max(0.5, min(20.0, value))
+                        print("Set rings_line_width to \(value)")
+                    }
+                case "rings_spacing":
+                    if let value = Double(valueStr) {
+                        state.runtimeRingsSpacing = max(5.0, min(200.0, value))
+                        print("Set rings_spacing to \(value)")
+                    }
+                case "rings_expansion_rate":
+                    if let value = Double(valueStr) {
+                        state.runtimeRingsExpansionRate = max(0.1, min(5.0, value))
+                        print("Set rings_expansion_rate to \(value)")
+                    }
+
                 default:
                     print("Warning: Unknown property '\(propertyName)' in !set_property")
                 }
+            }
+
+        case "set_image_dir":
+            // Shorthand for !set_property('image_dir', 'path')
+            // Syntax: !set_image_dir('Images/NewFolder/')
+            if let args = extractArgs(from: trimmed), let dir = args.first {
+                state.runtimeImageDir = dir
+                state.imageIndex = 0
+                state.holdImageIndex = -1
+                print("Set image_dir to \(dir)")
             }
 
         case "random_jump":
@@ -977,6 +1208,41 @@ class SpiralEngine: ObservableObject {
         }
 
         return items
+    }
+
+    /// Parse a color value from string (hex like "FF0033" or RGB like "255,0,51")
+    private func parseColor(_ value: String) -> [Int]? {
+        // Try hex format first (with or without #)
+        let hex = value.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "#", with: "")
+        if hex.count == 6, let _ = Int(hex, radix: 16) {
+            let r = Int(hex.prefix(2), radix: 16) ?? 0
+            let g = Int(hex.dropFirst(2).prefix(2), radix: 16) ?? 0
+            let b = Int(hex.dropFirst(4).prefix(2), radix: 16) ?? 0
+            return [r, g, b]
+        }
+
+        // Try comma-separated RGB format
+        let parts = value.split(separator: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+        if parts.count == 3 {
+            return parts.map { max(0, min(255, $0)) }
+        }
+
+        print("Warning: Could not parse color '\(value)'. Use hex (FF0033) or RGB (255,0,51)")
+        return nil
+    }
+
+    /// Signal that spiral needs regeneration (view observes activeSpiralType)
+    /// For now this is a no-op since activeSpiralType is @Published and view reacts
+    /// In the future, could trigger regeneration with new color here
+    private func regenerateSpiralForType(_ spiralType: SpiralType) async {
+        // activeSpiralType is already set and is @Published
+        // The SpiralView should observe changes and regenerate
+        // For rings type, clear the pre-generated images
+        if spiralType == .rings {
+            state.spiralImage = nil
+            state.counterSpiralImage = nil
+        }
+        print("Spiral type changed to: \(spiralType.rawValue)")
     }
 
     /// Timeout action for mantra command
@@ -1301,7 +1567,9 @@ class SpiralEngine: ObservableObject {
     }
 
     /// Ask a yes/no question and branch to different scripts
-    private func showYesNoQuestion(question: String, yesScript: String, noScript: String) async {
+    /// Optional timeout auto-selects an answer (for auto-advance behavior when user doesn't respond)
+    private func showYesNoQuestion(question: String, yesScript: String, noScript: String,
+                                    timeoutSeconds: Int? = nil, timeoutDefault: String? = nil) async {
         await withCheckedContinuation { continuation in
             state.currentQuestion = .yesNo(question: question, onYes: {
                 self.state.currentQuestion = nil
@@ -1327,7 +1595,7 @@ class SpiralEngine: ObservableObject {
                     }
                 }
                 continuation.resume()
-            })
+            }, timeoutSeconds: timeoutSeconds, timeoutDefault: timeoutDefault)
             state.isWaiting = true
         }
     }
@@ -1446,6 +1714,41 @@ class SpiralEngine: ObservableObject {
                         print("Error jumping to awareness test script '\(jumpTarget)': \(error)")
                     }
 
+                    continuation.resume()
+                }
+            )
+            state.isWaiting = true
+        }
+    }
+
+    /// Inverted awareness test - for induction relaxation checks
+    /// If user CLICKS (notices the message), jumps to specified script (they're not in trance)
+    /// If timeout (didn't notice), continues inline (they're in trance)
+    private func showAwarenessTestInverted(message: String, timeoutSeconds: Int, jumpTarget: String) async {
+        await withCheckedContinuation { continuation in
+            state.currentQuestion = .awarenessTest(
+                message: message,
+                timeoutSeconds: timeoutSeconds,
+                onDismiss: {
+                    // User clicked - they noticed, not in trance
+                    self.state.currentQuestion = nil
+                    self.state.isWaiting = false
+
+                    // Jump to the specified script (e.g., repeat_induction)
+                    do {
+                        try self.loadScript(named: jumpTarget)
+                        print("Awareness test (inv): user clicked, jumped to script '\(jumpTarget)'")
+                    } catch {
+                        print("Error jumping to awareness test script '\(jumpTarget)': \(error)")
+                    }
+
+                    continuation.resume()
+                },
+                onTimeout: {
+                    // User didn't notice - they're in trance, continue inline
+                    self.state.currentQuestion = nil
+                    self.state.isWaiting = false
+                    print("Awareness test (inv): timeout, user in trance, continuing")
                     continuation.resume()
                 }
             )

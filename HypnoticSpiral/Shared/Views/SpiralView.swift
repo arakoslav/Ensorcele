@@ -62,6 +62,13 @@ struct SpiralView: View {
                     await regenerateSpiral(size: windowSize)
                 }
             }
+            .onChange(of: state.runtimeImageDir) { oldDir, newDir in
+                if let newDir = newDir {
+                    Task {
+                        await reloadImages(from: newDir)
+                    }
+                }
+            }
         }
         .task {
             await loadResources()
@@ -358,8 +365,9 @@ struct SpiralView: View {
             case .openQuestion(let prompt, let variableName, let completion):
                 OpenQuestionDialog(prompt: prompt, variableName: variableName, onSubmit: completion)
 
-            case .yesNo(let question, let onYes, let onNo):
-                YesNoQuestionDialog(question: question, onYes: onYes, onNo: onNo)
+            case .yesNo(let question, let onYes, let onNo, let timeoutSeconds, let timeoutDefault):
+                YesNoQuestionDialog(question: question, onYes: onYes, onNo: onNo,
+                                    timeoutSeconds: timeoutSeconds, timeoutDefault: timeoutDefault)
 
             case .challenge(let prompt, let variableName, let completion):
                 ChallengeDialog(prompt: prompt, variableName: variableName, onSubmit: completion)
@@ -527,6 +535,20 @@ struct SpiralView: View {
         // Start the animation engine
         engine.start()
     }
+
+    /// Reload images from a new directory (called when runtimeImageDir changes)
+    private func reloadImages(from directory: String) async {
+        await Task {
+            let (images, unshuffledImages, filenames) = ImageLoader.loadImages(
+                from: directory,
+                shuffle: config.properties.shuffleImages
+            )
+            state.images = images
+            state.unshuffledImages = unshuffledImages
+            state.imageFilenames = filenames
+            print("Reloaded \(images.count) images from \(directory)")
+        }.value
+    }
 }
 
 /// Main rendering view for spiral, text, and images
@@ -569,7 +591,8 @@ struct SpiralRenderView: View {
             if !state.backgroundText.isEmpty {
                 VStack {
                     Spacer()
-                    ConfiguredText(state.backgroundText, config: config, fontSize: 300)
+                    ConfiguredText(state.backgroundText, config: config,
+                                   fontSize: state.getEffectiveBackgroundFontSize(), state: state)
                         .opacity(0.3)
                         .minimumScaleFactor(0.1)
                         .lineLimit(nil)
@@ -582,7 +605,8 @@ struct SpiralRenderView: View {
             if !state.persistentText.isEmpty {
                 VStack {
                     Spacer()
-                    ConfiguredText(state.persistentText, config: config, fontSize: 64)
+                    ConfiguredText(state.persistentText, config: config,
+                                   fontSize: state.getEffectiveFontSize(), state: state)
                     Spacer()
                 }
                 .ignoresSafeArea()
@@ -590,7 +614,8 @@ struct SpiralRenderView: View {
 
             // Main word display (center of full screen)
             if state.drawWords && !state.currentWord.isEmpty {
-                ConfiguredText(state.currentWord, config: config, fontSize: 64)
+                ConfiguredText(state.currentWord, config: config,
+                               fontSize: state.getEffectiveFontSize(), state: state)
                     .ignoresSafeArea()
             }
 
@@ -677,8 +702,12 @@ struct SubliminalTextView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            if let subliminalColor = config.properties.subliminalColor,
-               let subliminalAlpha = config.properties.subliminalAlpha {
+            // Use runtime overrides if available, otherwise fall back to config
+            let subliminalColor = state.getEffectiveSubliminalColor() ?? config.properties.subliminalColor
+            let subliminalAlpha = state.getEffectiveSubliminalAlpha() ?? config.properties.subliminalAlpha
+
+            if let subliminalColor = subliminalColor,
+               let subliminalAlpha = subliminalAlpha {
 
                 let textColor = Color(
                     red: Double(subliminalColor[0]) / 255.0,
@@ -700,7 +729,7 @@ struct SubliminalTextView: View {
                     }
                     .onChange(of: state.subliminalText) { _, _ in
                         // Potentially reposition when text changes based on probability
-                        let moveProbability = config.properties.subliminalMoveProbability ?? 100
+                        let moveProbability = state.getEffectiveSubliminalMoveProbability()
                         if Int.random(in: 1...100) <= moveProbability {
                             randomizePosition()
                         }
@@ -710,8 +739,8 @@ struct SubliminalTextView: View {
     }
 
     private func randomizePosition() {
-        // Use scatter from config (default 200) to determine position range from center
-        let scatter = CGFloat(config.properties.subliminalScatter ?? 200)
+        // Use scatter from state (supports runtime override)
+        let scatter = CGFloat(state.getEffectiveSubliminalScatter())
         let centerX = viewSize.width / 2
         let centerY = viewSize.height / 2
 
