@@ -17,6 +17,7 @@ enum SpiralType: String, Codable, CaseIterable {
     case chromatic = "chromatic"        // Shader-style with chromatic aberration (RGB offset)
     case colors = "colors"              // Color-shifting bands flowing outward (was "rings")
     case rings = "rings"                // Concentric rings expanding from center with texture
+    case shader = "shader"              // Custom GLSL/Metal shader from file
 
     static var `default`: SpiralType { .twist }
 }
@@ -71,6 +72,10 @@ struct SpiralConfig: Codable, Identifiable, Hashable {
         let ringsPulseWave: Double      // 0 = uniform spacing, >0 = pulsed density waves
         let ringsTextured: Bool         // If true, rings have radial texture to show rotation
         let ringsExpansionRate: Double  // How fast rings expand outward (1.0 = normal)
+
+        // Shader properties (for shader spiral type - custom GLSL/Metal shaders)
+        let shaderFile: String?         // Path to shader file (relative to Shaders directory)
+        let shaderSpeed: Double         // Time multiplier for shader animation (1.0 = normal)
 
         // Text properties
         let textColor: [Int]
@@ -163,6 +168,10 @@ struct SpiralConfig: Codable, Identifiable, Hashable {
             ringsTextured = try container.decodeIfPresent(Bool.self, forKey: .ringsTextured) ?? false
             ringsExpansionRate = try container.decodeIfPresent(Double.self, forKey: .ringsExpansionRate) ?? 3.0
 
+            // Shader properties
+            shaderFile = try container.decodeIfPresent(String.self, forKey: .shaderFile)
+            shaderSpeed = try container.decodeIfPresent(Double.self, forKey: .shaderSpeed) ?? 1.0
+
             textColor = try container.decodeIfPresent([Int].self, forKey: .textColor) ?? [0, 51, 204]
             textAlpha = try container.decodeIfPresent(Int.self, forKey: .textAlpha) ?? 254
 
@@ -216,6 +225,8 @@ struct SpiralConfig: Codable, Identifiable, Hashable {
             case ringsPulseWave = "rings_pulse_wave"
             case ringsTextured = "rings_textured"
             case ringsExpansionRate = "rings_expansion_rate"
+            case shaderFile = "shader_file"
+            case shaderSpeed = "shader_speed"
             case voice
             case subliminalAlpha = "subliminal_alpha"
             case subliminalColor = "subliminal_color"

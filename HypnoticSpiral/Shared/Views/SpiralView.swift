@@ -262,32 +262,108 @@ struct SpiralView: View {
         #endif
     }
 
+    /// Available shader effects
+    private static let availableShaders: [(name: String, label: String)] = [
+        ("hypnoticSpiralShader", "Hypnotic"),
+        ("tunnelShader", "Tunnel"),
+        ("chromaticVortexShader", "Chromatic"),
+        ("pulsingRingsShader", "Pulsing"),
+        ("fractalSpiralShader", "Fractal"),
+        ("hypnoEyeShader", "Eye"),
+        ("kaleidoscopeShader", "Kaleidoscope"),
+        ("waveInterferenceShader", "Waves"),
+        ("rippleShader", "Ripple"),
+        ("dualRingsShader", "Dual Rings"),
+        ("rainbowShader", "Rainbow")
+    ]
+
+    /// Current selection label for the spiral menu
+    private var currentSpiralLabel: String {
+        if state.activeSpiralType == .shader {
+            let shaderLabel = Self.availableShaders.first { $0.name == state.activeShader }?.label ?? "Shader"
+            return shaderLabel
+        }
+        return state.activeSpiralType.rawValue.capitalized
+    }
+
+    @State private var showingSpiralPicker = false
+
     private var spiralTypePicker: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Spiral")
                 .font(.caption2)
                 .foregroundColor(.white.opacity(0.5))
 
-            ForEach(SpiralType.allCases, id: \.self) { type in
-                Button {
-                    state.activeSpiralType = type
-                } label: {
-                    HStack(spacing: 6) {
-                        Text(type.rawValue.capitalized)
-                            .font(.caption)
-                        Spacer()
-                        if state.activeSpiralType == type {
-                            Image(systemName: "checkmark")
-                                .font(.caption2)
-                        }
-                    }
-                    .foregroundColor(state.activeSpiralType == type ? .white : .white.opacity(0.6))
-                    .padding(.vertical, 6)
-                    .padding(.horizontal, 10)
-                    .background(state.activeSpiralType == type ? Color.white.opacity(0.2) : Color.white.opacity(0.1))
-                    .cornerRadius(4)
+            Button {
+                showingSpiralPicker = true
+            } label: {
+                HStack(spacing: 6) {
+                    Text(currentSpiralLabel)
+                        .font(.caption)
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .font(.caption2)
                 }
-                .buttonStyle(.plain)
+                .foregroundColor(.white)
+                .padding(.vertical, 8)
+                .padding(.horizontal, 10)
+                .background(Color.white.opacity(0.2))
+                .cornerRadius(4)
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $showingSpiralPicker, arrowEdge: .leading) {
+                VStack(alignment: .leading, spacing: 2) {
+                    // Non-shader spiral types
+                    ForEach(SpiralType.allCases.filter { $0 != .shader }, id: \.self) { type in
+                        Button {
+                            state.activeSpiralType = type
+                            showingSpiralPicker = false
+                        } label: {
+                            HStack {
+                                Text(type.rawValue.capitalized)
+                                Spacer()
+                                if state.activeSpiralType == type {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    Divider()
+                        .padding(.vertical, 4)
+
+                    Text("Shaders")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 12)
+
+                    // Shader options
+                    ForEach(Self.availableShaders, id: \.name) { shader in
+                        Button {
+                            state.activeSpiralType = .shader
+                            state.activeShader = shader.name
+                            showingSpiralPicker = false
+                        } label: {
+                            HStack {
+                                Text(shader.label)
+                                Spacer()
+                                if state.activeSpiralType == .shader && state.activeShader == shader.name {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.vertical, 8)
+                .frame(minWidth: 160)
             }
         }
     }
@@ -446,12 +522,12 @@ struct SpiralView: View {
         let spiralType = state.activeSpiralType
         print("Regenerating spiral for size: \(size), type: \(spiralType)")
         await Task {
-            // Rings type uses Canvas-based rendering (no bitmap needed)
-            if spiralType == .rings {
+            // Rings and shader types use real-time rendering (no bitmap needed)
+            if spiralType == .rings || spiralType == .shader {
                 state.spiralImage = nil
                 state.counterSpiralImage = nil
                 state.spiralFrames = []
-                print("Using Canvas-based rendering for rings")
+                print("Using real-time rendering for \(spiralType)")
             } else {
                 state.spiralFrames = []
                 state.spiralImage = SpiralRenderer.generateSpiral(config: config, size: size, spiralType: spiralType)
@@ -498,6 +574,7 @@ struct SpiralView: View {
             state.config = config
             state.initializeFrequencies(from: config)
             state.activeSpiralType = config.properties.spiralType
+            state.activeShader = config.properties.shaderFile ?? "hypnoticSpiralShader"
 
             // Merge saved variables with shared variables (saved takes precedence for session vars)
             var mergedVars = SharedVariables.shared.asDictionary()
@@ -522,6 +599,7 @@ struct SpiralView: View {
             state.drawWords = true
             state.drawImages = false  // Start with images off, turn on with !images_on()
             state.activeSpiralType = config.properties.spiralType
+            state.activeShader = config.properties.shaderFile ?? "hypnoticSpiralShader"
 
             // Load shared variables (name, master, gender)
             state.variables = SharedVariables.shared.asDictionary()
@@ -573,6 +651,18 @@ struct SpiralRenderView: View {
                 if state.activeSpiralType == .rings {
                     RingsCanvasView(state: state, config: config)
                         .opacity(Double(state.getEffectiveSpiralAlpha()) / 255.0)
+                } else if state.activeSpiralType == .shader {
+                    // Metal shader-based rendering
+                    ShaderSpiralView(
+                        shaderName: state.activeShader,
+                        color: Color(
+                            red: Double(config.properties.color[0]) / 255.0,
+                            green: Double(config.properties.color[1]) / 255.0,
+                            blue: Double(config.properties.color[2]) / 255.0
+                        ),
+                        alpha: Double(state.getEffectiveSpiralAlpha()),
+                        speed: config.properties.shaderSpeed
+                    )
                 } else if let spiral = state.spiralImage {
                     // Bitmap-based rendering for other spiral types
                     spiralImageView(spiral, rotation: state.spiralRotation,

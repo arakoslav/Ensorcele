@@ -87,6 +87,9 @@ class SpiralRenderer {
         case .rings:
             // Concentric rings expanding from center with optional texture
             return generateExpandingRingsSpiral(config: config, size: size)
+        case .shader:
+            // Shader spirals render in real-time via ShaderSpiralView, no bitmap needed
+            return nil
         }
     }
 

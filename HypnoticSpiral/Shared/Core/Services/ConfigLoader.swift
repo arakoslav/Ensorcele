@@ -80,9 +80,10 @@ class ConfigLoader {
     /// Load a configuration from a URL
     func loadConfig(from url: URL) throws -> SpiralConfig {
         let configName = url.deletingPathExtension().lastPathComponent
+        let cacheKey = url.path  // Use full path to avoid collisions between dirs
 
         // Check cache
-        if let cached = configCache[configName] {
+        if let cached = configCache[cacheKey] {
             return cached
         }
 
@@ -132,7 +133,7 @@ class ConfigLoader {
         let config = try JSONDecoder().decode(SpiralConfig.self, from: mergedData)
 
         // Cache and return
-        configCache[configName] = config
+        configCache[cacheKey] = config
         return config
     }
 

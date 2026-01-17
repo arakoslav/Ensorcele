@@ -22,6 +22,7 @@ class SpiralState: ObservableObject {
     @Published var drawImages: Bool = false
     @Published var speakWords: Bool = false
     @Published var activeSpiralType: SpiralType = .fermat
+    @Published var activeShader: String = "hypnoticSpiralShader"
 
     // MARK: - Current Indices
 
