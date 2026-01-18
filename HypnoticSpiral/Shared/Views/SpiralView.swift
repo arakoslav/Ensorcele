@@ -40,11 +40,26 @@ struct SpiralView: View {
                     SpiralRenderView(state: state, config: config)
                 }
 
-                if showUI {
-                    overlayControlsView
+                // Tap-to-show overlay (when UI is hidden)
+                if !showUI && !isAwarenessTestActive {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            onUserInteraction()
+                        }
                 }
 
-                mouseTrackingOverlay
+                // UI controls with dismiss layer behind them
+                if showUI {
+                    // Dismiss layer - tap anywhere outside controls to hide UI
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            hideUI()
+                        }
+
+                    overlayControlsView
+                }
 
                 questionDialogView
             }
@@ -406,15 +421,11 @@ struct SpiralView: View {
         .buttonStyle(.plain)
     }
 
-    @ViewBuilder
-    private var mouseTrackingOverlay: some View {
-        // Both macOS and iOS require a click/tap to show UI (not mouse movement)
-        if !showUI && !isAwarenessTestActive {
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    onUserInteraction()
-                }
+    /// Hide the UI immediately
+    private func hideUI() {
+        mouseIdleTimer?.invalidate()
+        withAnimation(.easeOut(duration: 0.3)) {
+            showUI = false
         }
     }
 
