@@ -713,7 +713,7 @@ class SpiralEngine: ObservableObject {
                     state.backgroundText = text  // Empty string clears it
                 }
             }
-        case "subliminals":
+        case "subliminals", "set_subliminals":
             if let args = extractArgs(from: trimmed) {
                 if args.count > 1 {
                     // Multiple arguments - set up cycling through word list
@@ -726,11 +726,20 @@ class SpiralEngine: ObservableObject {
                     state.subliminalWordIndex = 0
                     state.subliminalText = words.first ?? ""
                 } else if let firstArg = args.first, !firstArg.isEmpty {
-                    // Single non-empty argument - static subliminal text (clears cycling)
+                    // Single non-empty argument
                     let text = await performVariableSubstitution(firstArg)
-                    state.subliminalWords = []
-                    state.subliminalWordIndex = 0
-                    state.subliminalText = text
+                    // Check for pipe-separated values (e.g., 'word1|word2|word3')
+                    if text.contains("|") {
+                        let words = text.split(separator: "|").map { String($0).trimmingCharacters(in: .whitespaces) }
+                        state.subliminalWords = words
+                        state.subliminalWordIndex = 0
+                        state.subliminalText = words.first ?? ""
+                    } else {
+                        // Static subliminal text (clears cycling)
+                        state.subliminalWords = []
+                        state.subliminalWordIndex = 0
+                        state.subliminalText = text
+                    }
                 } else {
                     // Empty - clear subliminals
                     state.subliminalWords = []
@@ -1154,6 +1163,7 @@ class SpiralEngine: ObservableObject {
     }
 
     /// Extract arguments from command string "cmd(arg1, arg2)"
+    /// Properly handles commas inside quoted strings
     private func extractArgs(from commandString: String) -> [String]? {
         guard let parenStart = commandString.firstIndex(of: "("),
               let parenEnd = commandString.lastIndex(of: ")") else {
@@ -1166,16 +1176,48 @@ class SpiralEngine: ObservableObject {
             return []
         }
 
-        // Basic argument parsing - split by comma and trim quotes
-        return argsString.split(separator: ",").map { arg in
-            var trimmed = arg.trimmingCharacters(in: .whitespaces)
-            // Remove surrounding quotes if present (single or double)
+        // Quote-aware argument parsing - don't split on commas inside quotes
+        var args: [String] = []
+        var currentArg = ""
+        var inQuote = false
+        var quoteChar: Character = "'"
+
+        for char in argsString {
+            if (char == "'" || char == "\"") && !inQuote {
+                // Starting a quoted section
+                inQuote = true
+                quoteChar = char
+                currentArg.append(char)
+            } else if char == quoteChar && inQuote {
+                // Ending a quoted section
+                inQuote = false
+                currentArg.append(char)
+            } else if char == "," && !inQuote {
+                // Argument separator (outside quotes)
+                var trimmed = currentArg.trimmingCharacters(in: .whitespaces)
+                // Remove surrounding quotes if present
+                if (trimmed.hasPrefix("'") && trimmed.hasSuffix("'")) ||
+                   (trimmed.hasPrefix("\"") && trimmed.hasSuffix("\"")) {
+                    trimmed = String(trimmed.dropFirst().dropLast())
+                }
+                args.append(trimmed)
+                currentArg = ""
+            } else {
+                currentArg.append(char)
+            }
+        }
+
+        // Don't forget the last argument
+        if !currentArg.isEmpty {
+            var trimmed = currentArg.trimmingCharacters(in: .whitespaces)
             if (trimmed.hasPrefix("'") && trimmed.hasSuffix("'")) ||
                (trimmed.hasPrefix("\"") && trimmed.hasSuffix("\"")) {
                 trimmed = String(trimmed.dropFirst().dropLast())
             }
-            return trimmed
+            args.append(trimmed)
         }
+
+        return args
     }
 
     /// Extract a single array argument from command string like "cmd(['item1', 'item2'])"

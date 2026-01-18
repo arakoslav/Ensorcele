@@ -105,6 +105,15 @@ struct MetalShaderRepresentable: ViewRepresentable {
         mtkView.framebufferOnly = false
         mtkView.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
 
+        // Enable transparency so images show through
+        #if os(macOS)
+        mtkView.layer?.isOpaque = false
+        mtkView.layer?.backgroundColor = .clear
+        #else
+        mtkView.isOpaque = false
+        mtkView.backgroundColor = .clear
+        #endif
+
         // Set up the render pipeline
         if let device = mtkView.device {
             context.coordinator.setupPipeline(device: device, shaderName: shaderName)
@@ -166,8 +175,12 @@ struct MetalShaderRepresentable: ViewRepresentable {
             pipelineDescriptor.fragmentFunction = fragment
             pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
             pipelineDescriptor.colorAttachments[0].isBlendingEnabled = true
+            // RGB blending
             pipelineDescriptor.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
             pipelineDescriptor.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+            // Alpha blending (needed for transparency to work with layers behind)
+            pipelineDescriptor.colorAttachments[0].sourceAlphaBlendFactor = .sourceAlpha
+            pipelineDescriptor.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
 
             do {
                 pipelineState = try device.makeRenderPipelineState(descriptor: pipelineDescriptor)

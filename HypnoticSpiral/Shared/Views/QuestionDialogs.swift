@@ -691,7 +691,7 @@ struct AwarenessTestDialog: View {
         VStack {
             Spacer()
 
-            // Subtle button at bottom of screen
+            // Subtle button at bottom of screen - full width, centered text
             Button {
                 stopTimer()
                 onDismiss()
@@ -699,16 +699,20 @@ struct AwarenessTestDialog: View {
                 Text(message)
                     .font(.system(size: 14, weight: .light))
                     .foregroundColor(.white.opacity(0.6))
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 10)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 40)
+                    .padding(.vertical, 12)
                     .background(
-                        Capsule()
-                            .fill(Color.white.opacity(0.1))
-                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.white.opacity(0.0))
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
                     )
             }
             .buttonStyle(.plain)
             .opacity(opacity)
+            .padding(.horizontal, 20)
             .padding(.bottom, 40)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
