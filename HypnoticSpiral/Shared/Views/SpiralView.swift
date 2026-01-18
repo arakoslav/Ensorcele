@@ -164,11 +164,6 @@ struct SpiralView: View {
             Spacer()
         }
         .transition(.move(edge: .top).combined(with: .opacity))
-        #if os(macOS)
-        .onContinuousHover { _ in onMouseMoved() }
-        #else
-        .simultaneousGesture(TapGesture().onEnded { onUserInteraction() })
-        #endif
     }
 
     private var bottomTempoView: some View {
@@ -199,11 +194,6 @@ struct SpiralView: View {
             .padding(.bottom, 20)
         }
         .transition(.move(edge: .bottom).combined(with: .opacity))
-        #if os(macOS)
-        .onContinuousHover { _ in onMouseMoved() }
-        #else
-        .simultaneousGesture(TapGesture().onEnded { onUserInteraction() })
-        #endif
     }
 
     private var leftSidebarView: some View {
@@ -243,11 +233,6 @@ struct SpiralView: View {
             Spacer()
         }
         .transition(.move(edge: .leading).combined(with: .opacity))
-        #if os(macOS)
-        .onContinuousHover { _ in onMouseMoved() }
-        #else
-        .simultaneousGesture(TapGesture().onEnded { onUserInteraction() })
-        #endif
     }
 
     private var rightSidebarView: some View {
@@ -270,11 +255,6 @@ struct SpiralView: View {
             .padding(.trailing, 20)
         }
         .transition(.move(edge: .trailing).combined(with: .opacity))
-        #if os(macOS)
-        .onContinuousHover { _ in onMouseMoved() }
-        #else
-        .simultaneousGesture(TapGesture().onEnded { onUserInteraction() })
-        #endif
     }
 
     /// Available shader effects
@@ -491,11 +471,6 @@ struct SpiralView: View {
                 showUI = false
             }
         }
-    }
-
-    /// Handle mouse movement on macOS
-    private func onMouseMoved() {
-        onUserInteraction()
     }
 
     /// Adjust playback tempo
