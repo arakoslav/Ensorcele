@@ -175,10 +175,11 @@ struct MetalShaderRepresentable: ViewRepresentable {
             pipelineDescriptor.fragmentFunction = fragment
             pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
             pipelineDescriptor.colorAttachments[0].isBlendingEnabled = true
-            // RGB blending
+            // Additive RGB blending - spiral colors add to background for vibrant colors
+            // while still showing images through transparent areas
             pipelineDescriptor.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
-            pipelineDescriptor.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
-            // Alpha blending (needed for transparency to work with layers behind)
+            pipelineDescriptor.colorAttachments[0].destinationRGBBlendFactor = .one
+            // Alpha blending (standard for transparency)
             pipelineDescriptor.colorAttachments[0].sourceAlphaBlendFactor = .sourceAlpha
             pipelineDescriptor.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
 

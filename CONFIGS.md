@@ -82,6 +82,44 @@ The `properties` object controls appearance, timing, and behavior.
 | `nimja` | Curved wedge sectors with strong pull effect |
 | `chromatic` | Shader-style with RGB chromatic aberration |
 | `rings` | Concentric flowing rings with color shifting and optional spokes |
+| `shader` | GPU-accelerated Metal shader effects (see Shader Spirals below) |
+
+#### Shader Spirals
+
+When `spiral_type` is set to `shader`, the spiral is rendered using Metal GPU shaders for smooth, high-performance visual effects. Configure with these properties:
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `shader_name` | string | "hypnoticSpiralShader" | Name of the Metal shader function |
+| `shader_speed` | float | 1.0 | Animation speed multiplier |
+
+**Available Shaders:**
+
+| Shader Name | Description |
+|-------------|-------------|
+| `hypnoticSpiralShader` | Classic rotating spiral with configurable arms |
+| `tunnelShader` | Smooth tunnel effect with anti-aliased rings |
+| `chromaticVortexShader` | RGB separation with swirling motion |
+| `pulsingRingsShader` | Concentric rings that pulse outward |
+| `fractalSpiralShader` | Self-similar spiral patterns (multiple octaves) |
+| `hypnoEyeShader` | Eye-like hypnotic pattern with pulsing pupil |
+| `kaleidoscopeShader` | Symmetric kaleidoscope pattern (8 segments) |
+| `waveInterferenceShader` | Overlapping wave patterns from multiple sources |
+| `rippleShader` | Colorful ripple distortion effect |
+| `dualRingsShader` | Rings moving both inward and outward |
+| `rainbowShader` | Rainbow spiral with logarithmic polar coordinates |
+
+Shader spirals respect the `color` and `alpha` properties, and support transparency so images show through.
+
+```json
+{
+  "spiral_type": "shader",
+  "shader_name": "tunnelShader",
+  "shader_speed": 1.5,
+  "color": [255, 200, 255],
+  "alpha": 180
+}
+```
 
 #### Rings Properties (for `rings` spiral type)
 
@@ -253,9 +291,23 @@ Commands are prefixed with `!` and control program behavior.
 | Command | Description |
 |---------|-------------|
 | `!hold_text('text')` | Display persistent text (empty string clears) |
-| `!background('text')` | Display background layer text |
+| `!background('text')` | Display large background layer text (use `\\n` for newlines) |
 | `!speak('text')` | Speak text immediately |
 | `!whisper('text')` | Speak text at 30% volume |
+
+#### Subliminal Text
+
+| Command | Description |
+|---------|-------------|
+| `!set_subliminals('word1\|word2\|word3')` | Set cycling subliminal words (pipe-separated) |
+| `!subliminals('word1\|word2\|word3')` | Alias for set_subliminals |
+| `!set_subliminals('')` | Clear subliminal text |
+
+Subliminal text appears briefly at random positions on screen. Use pipe `|` to separate multiple words that cycle:
+
+```json
+"!set_subliminals('Obey|Submit|Relax|Deeper')"
+```
 
 ### Image Commands
 
@@ -299,17 +351,59 @@ Randomly select one script from the array and jump to it. Useful for varying con
 ### Runtime Property Control
 
 #### `!set_property('property', value)`
-Dynamically change a property value at runtime. Useful for phase-based effects like fading images in/out.
+Dynamically change a property value at runtime. Useful for phase-based effects like fading images in/out, changing colors, or switching spiral types.
 
-**Supported properties:**
-- `image_alpha` - Image opacity (0-255)
-- `text_alpha` - Text opacity (0-255)
-- `spiral_alpha` or `alpha` - Spiral opacity (0-255)
-- `subliminal_alpha` - Subliminal text opacity (0-255)
+**Alpha/Opacity Properties (0-255):**
+- `image_alpha` - Image opacity
+- `text_alpha` - Text opacity
+- `spiral_alpha` or `alpha` - Spiral opacity
+- `subliminal_alpha` - Subliminal text opacity
+
+**Color Properties (hex `'FF00FF'` or RGB `'255,0,255'`):**
+- `text_color` - Main text color
+- `spiral_color` - Spiral color
+- `subliminal_color` - Subliminal text color
+
+**Spiral Properties:**
+- `spiral_type` - Change spiral type (fermat, logarithmic, shader, etc.)
+- `shader` - Change shader when using shader spiral type
+- `spiral_speed` - Rotation speed multiplier (1.0 = normal)
+- `spiral_line_width` - Width of spiral lines
+- `spiral_tightness` - Spiral density/spacing
+- `spiral_arms` - Number of spiral arms
+
+**Text Properties:**
+- `font_size` - Main text font size
+- `background_font_size` - Background text font size
+
+**Timing Properties:**
+- `word_frequency` - How often words change (lower = faster)
+- `image_frequency` - How often images change
+
+**Subliminal Behavior:**
+- `subliminal_scatter` - Position scatter amount
+- `subliminal_move_probability` - Probability of repositioning (0-100)
+- `subliminal_display_probability` - Probability of showing (0-100)
+- `subliminal_change_probability` - Probability of changing text (0-100)
+
+**Rings Properties (for rings spiral type):**
+- `rings_line_width` - Ring line width
+- `rings_spacing` - Spacing between rings
+- `rings_expansion_rate` - How fast rings flow outward
 
 ```json
 "!set_property('image_alpha', 128)",
-"!set_property('text_alpha', 200)"
+"!set_property('spiral_type', 'shader')",
+"!set_property('shader', 'tunnelShader')",
+"!set_property('text_color', 'FF00FF')",
+"!set_property('spiral_speed', 1.5)"
+```
+
+#### `!set_image_dir('path/')`
+Change the image directory at runtime. Triggers immediate reload of images from the new directory.
+
+```json
+"!set_image_dir('Images/phase2/')"
 ```
 
 ### User Input Commands
@@ -331,11 +425,22 @@ Ask a free-text question, store answer in variable.
 "!open_question('What is your name?', 'name')"
 ```
 
-#### `!yn_question('question', 'yesScript', 'noScript')`
-Ask yes/no question, branch to different scripts.
+#### `!yn_question('question', 'yesScript', 'noScript', timeout, 'default')`
+Ask yes/no question, branch to different scripts. Optional timeout auto-selects an answer.
+
+- `question`: The yes/no question to ask
+- `yesScript`: Script to jump to on "Yes"
+- `noScript`: Script to jump to on "No"
+- `timeout` (optional): Seconds before auto-selecting (integer)
+- `default` (optional): Which answer to auto-select: `'yes'` or `'no'`
 
 ```json
 "!yn_question('Do you want to continue?', 'self.continue', 'self.goodbye')"
+```
+
+With timeout (auto-selects "yes" after 10 seconds):
+```json
+"!yn_question('Are you relaxed?', 'self.deeper', 'self.relax_more', 10, 'yes')"
 ```
 
 Also available as `!question_yn()`.
@@ -390,6 +495,20 @@ The test appears without the dark overlay, so the spiral remains fully visible a
 ```json
 "!awareness_test('Click if awake', 15, 'self.deep_trance')"
 ```
+
+#### `!awareness_test_inv('message', timeout, 'jumpTarget')`
+**Inverted** awareness test. The opposite logic of `awareness_test`:
+
+- If user **clicks** (notices the message) → jumps to script (they're still aware)
+- If **timeout** (didn't notice) → continues inline (they're in trance)
+
+Useful for induction scripts where you want to loop/repeat if the user is still too aware:
+
+```json
+"!awareness_test_inv('Click here if you can read this.', 8, 'self.not_deep_enough')"
+```
+
+In this example, if the user clicks within 8 seconds, they jump to a "not deep enough" script that may repeat the induction. If they don't notice/click, they continue to deeper content.
 
 ### Conditional Command
 

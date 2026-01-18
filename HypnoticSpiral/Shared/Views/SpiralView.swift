@@ -408,19 +408,7 @@ struct SpiralView: View {
 
     @ViewBuilder
     private var mouseTrackingOverlay: some View {
-        #if os(macOS)
-        Color.clear
-            .contentShape(Rectangle())
-            .allowsHitTesting(!showUI && !isAwarenessTestActive)
-            .onContinuousHover { phase in
-                switch phase {
-                case .active(_):
-                    onMouseMoved()
-                case .ended:
-                    break
-                }
-            }
-        #else
+        // Both macOS and iOS require a click/tap to show UI (not mouse movement)
         if !showUI && !isAwarenessTestActive {
             Color.clear
                 .contentShape(Rectangle())
@@ -428,7 +416,6 @@ struct SpiralView: View {
                     onUserInteraction()
                 }
         }
-        #endif
     }
 
     @ViewBuilder
@@ -663,6 +650,7 @@ struct SpiralRenderView: View {
                         alpha: Double(state.getEffectiveSpiralAlpha()),
                         speed: config.properties.shaderSpeed
                     )
+                    .ignoresSafeArea()
                 } else if let spiral = state.spiralImage {
                     // Bitmap-based rendering for other spiral types
                     spiralImageView(spiral, rotation: state.spiralRotation,
@@ -715,22 +703,6 @@ struct SpiralRenderView: View {
                     .ignoresSafeArea()
             }
 
-            // Spoken word indicator
-            if state.isSpeaking && !state.spokenWord.isEmpty {
-                VStack {
-                    Spacer()
-                    HStack {
-                        Spacer()
-                        Text(state.spokenWord)
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.5))
-                            .padding(8)
-                            .background(Color.black.opacity(0.7))
-                            .cornerRadius(4)
-                            .padding()
-                    }
-                }
-            }
         }
     }
 
